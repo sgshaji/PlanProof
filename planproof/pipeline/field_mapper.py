@@ -9,6 +9,7 @@ POSTCODE_RE = re.compile(r"\b([A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2})\b", re.I)
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I)
 PHONE_RE = re.compile(r"\b(\+?\d[\d\s().-]{8,}\d)\b")
 APPREF_RE = re.compile(r"\b(20\d{6,}[A-Z]{1,3})\b", re.I)
+DATE_LIKE = re.compile(r"\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b")
 
 # Strong heuristics for plan sheets
 ADDRESS_LIKE = re.compile(r"^\s*\d+\s+[A-Z0-9'’\- ]{4,}$")
@@ -53,6 +54,18 @@ def _is_noise(s: str) -> bool:
     """Check if text block is noise (copyright, notes, etc.)."""
     sl = s.lower()
     return any(k in sl for k in ["copyright", "notes:", "scale", "printed on", "os 1000"])
+
+
+def looks_like_phone(s: str) -> bool:
+    """Check if string looks like a phone number (not a date)."""
+    # Reject if it matches date pattern
+    if DATE_LIKE.search(s):
+        return False
+    # Phone should have digits, not just date separators
+    digits = sum(1 for c in s if c.isdigit())
+    if digits < 8:  # Too short
+        return False
+    return True
 
 
 def pick_site_address(blocks: List[Dict[str, Any]]) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
@@ -182,7 +195,7 @@ def map_fields(extracted_layout: Dict[str, Any]) -> Dict[str, Any]:
                 _add_ev(evidence, "applicant_email", page_num, block_id, t)
         if "applicant_phone" not in fields:
             m = PHONE_RE.search(t)
-            if m and len(_norm(m.group(1))) >= 9:
+            if m and looks_like_phone(m.group(1)) and len(_norm(m.group(1))) >= 9:
                 fields["applicant_phone"] = _norm(m.group(1))
                 page_num = int(b.get("page_number", b.get("page", 0)))
                 block_id = f"p{page_num}b{b.get('index', '')}"

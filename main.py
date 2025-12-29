@@ -121,6 +121,7 @@ def single_pdf(pdf_path: str, application_ref: Optional[str] = None) -> Dict[str
             "llm_notes": (llm_art["id"] if llm_art else None),
         },
         "summary": validation.get("summary", {}),
+        "llm_triggered": llm_notes is not None,
     }
 
 
@@ -225,15 +226,25 @@ def main():
                 print(f"Processing document {doc_id} ({ingested['filename']})...")
                 
                 try:
-                    # Extract
+                    # Extract using extract_document (gets from DB or creates new)
                     extraction_result = extract_document(doc_id, docintel=docintel, storage_client=storage_client, db=db)
-                    extraction = extraction_result["extraction_result"]
+                    extraction_raw = extraction_result["extraction_result"]
                     
-                    # Build evidence_index with snippets and page numbers
+                    # Apply field mapper to extract structured fields
+                    from planproof.pipeline.field_mapper import map_fields
+                    mapped = map_fields(extraction_raw)
+                    fields = mapped["fields"]
+                    field_evidence = mapped["evidence_index"]
+                    
+                    # Build general evidence_index for text blocks and tables
                     evidence_index = {}
                     
+                    # Add index to blocks for field mapper reference
+                    for i, block in enumerate(extraction_raw.get("text_blocks", [])):
+                        block["index"] = i
+                    
                     # Extract text blocks as evidence with snippets
-                    for i, block in enumerate(extraction.get("text_blocks", [])):
+                    for i, block in enumerate(extraction_raw.get("text_blocks", [])):
                         content = block.get("content", "")
                         page_num = block.get("page_number")
                         snippet = content[:100] + "..." if len(content) > 100 else content
@@ -245,7 +256,7 @@ def main():
                         }
                     
                     # Extract tables as evidence with snippets
-                    for i, table in enumerate(extraction.get("tables", [])):
+                    for i, table in enumerate(extraction_raw.get("tables", [])):
                         page_num = table.get("page_number")
                         cells = table.get("cells", [])
                         cell_snippets = []
@@ -261,14 +272,18 @@ def main():
                             "snippet": snippet
                         }
                     
-                    # Build structured extraction
+                    # Merge field-specific evidence into general evidence_index
+                    for field_name, ev_list in field_evidence.items():
+                        evidence_index[field_name] = ev_list
+                    
+                    # Build structured extraction with mapped fields
                     extraction_structured = {
-                        "fields": {},  # Will be populated by field extraction
+                        "fields": fields,
                         "evidence_index": evidence_index,
-                        "metadata": extraction.get("metadata", {}),
-                        "text_blocks": extraction.get("text_blocks", []),
-                        "tables": extraction.get("tables", []),
-                        "page_anchors": extraction.get("page_anchors", {})
+                        "metadata": extraction_raw.get("metadata", {}),
+                        "text_blocks": extraction_raw.get("text_blocks", []),
+                        "tables": extraction_raw.get("tables", []),
+                        "page_anchors": extraction_raw.get("page_anchors", {})
                     }
                     
                     # Validate
@@ -339,12 +354,17 @@ def main():
                 }
             )
             
+            # Count LLM calls
+            llm_calls = sum(1 for r in all_results if r.get("llm_triggered", False))
+            
             summary = {
                 "run_id": run["id"],
                 "application_ref": application_ref,
                 "total_documents": len(ingested_results),
                 "successes": successes,
                 "failures": failures,
+                "llm_calls": llm_calls,
+                "llm_calls_per_run": llm_calls,
                 "results": all_results
             }
             
