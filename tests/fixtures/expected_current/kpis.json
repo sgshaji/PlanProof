@@ -1,0 +1,11 @@
+{
+  "application_ref_extracted_rate": 0.0,
+  "council_email_false_positive_count": 0,
+  "llm_trigger_rate": 0.3333333333333333,
+  "total_docs": 3,
+  "validation_pass_rate_by_doc_type": {
+    "application_form": 0.0,
+    "site_notice": 1.0,
+    "site_plan": 1.0
+  }
+}

@@ -2,13 +2,15 @@
 LLM Gate module: Use Azure OpenAI to resolve validation issues when deterministic rules fail.
 """
 
-from typing import Dict, Any, List, Optional
+from __future__ import annotations
+
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from planproof.aoai import AzureOpenAIClient
-from planproof.db import Database, Document, ValidationResult, ValidationStatus
-from planproof.pipeline.extract import get_extraction_result
-from planproof.docintel import DocumentIntelligence
+if TYPE_CHECKING:
+    from planproof.aoai import AzureOpenAIClient
+    from planproof.db import Database
+    from planproof.docintel import DocumentIntelligence
 
 
 def resolve_with_llm(
@@ -36,11 +38,17 @@ def resolve_with_llm(
     Returns:
         List of resolution results
     """
+    from planproof.aoai import AzureOpenAIClient
+    from planproof.db import Database, Document, ValidationResult, ValidationStatus
+    from planproof.pipeline.extract import get_extraction_result
+
     if aoai_client is None:
         aoai_client = AzureOpenAIClient()
     if db is None:
         db = Database()
     if docintel is None:
+        from planproof.docintel import DocumentIntelligence
+
         docintel = DocumentIntelligence()
 
     session = db.get_session()
@@ -349,6 +357,8 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
         Dictionary with triggered flag, request, response, gate logging info, and llm_call_count
     """
     if aoai_client is None:
+        from planproof.aoai import AzureOpenAIClient
+
         aoai_client = AzureOpenAIClient()
     
     # Get call count before the LLM call
@@ -387,4 +397,3 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
         "response": resp,
         "llm_call_count": llm_calls_made,
     }
-

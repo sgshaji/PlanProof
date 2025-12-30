@@ -6,8 +6,6 @@ import os
 from typing import Optional, List
 from pathlib import Path
 from datetime import datetime
-from azure.storage.blob import BlobServiceClient, BlobClient
-from azure.core.exceptions import AzureError
 
 from planproof.config import get_settings
 
@@ -17,6 +15,8 @@ class StorageClient:
 
     def __init__(self, connection_string: Optional[str] = None):
         """Initialize storage client."""
+        from azure.storage.blob import BlobServiceClient
+
         settings = get_settings()
         conn_str = connection_string or settings.azure_storage_connection_string
         self.client = BlobServiceClient.from_connection_string(conn_str)
@@ -169,6 +169,8 @@ class StorageClient:
         Returns:
             True if blob exists, False otherwise
         """
+        from azure.core.exceptions import AzureError
+
         blob_client = self.client.get_blob_client(container=container, blob=blob_name)
         try:
             blob_client.get_blob_properties()
@@ -224,4 +226,3 @@ class StorageClient:
         blob_path = blob_path.lstrip("/")
         blob_bytes = self.download_blob(container, blob_path)
         return json_module.loads(blob_bytes.decode("utf-8"))
-

@@ -1,0 +1,50 @@
+{
+  "evidence_index": {
+    "postcode": [
+      {
+        "block_id": "p1b1",
+        "confidence": 0.5,
+        "page": 1,
+        "snippet": "B8 1BG",
+        "source_doc_type": "site_plan"
+      }
+    ]
+  },
+  "fields": {
+    "document_type": "site_plan",
+    "postcode": "B8 1BG",
+    "postcode_confidence": 0.5
+  },
+  "metadata": {
+    "page_count": 1
+  },
+  "page_anchors": {},
+  "tables": [],
+  "text_blocks": [
+    {
+      "content": "Location Plan 1:1250",
+      "index": 0,
+      "page_number": 1
+    },
+    {
+      "content": "B8 1BG",
+      "index": 1,
+      "page_number": 1
+    },
+    {
+      "content": "4 2447",
+      "index": 2,
+      "page_number": 1
+    },
+    {
+      "content": "Scale 1:1250",
+      "index": 3,
+      "page_number": 1
+    },
+    {
+      "content": "Drawing No 123",
+      "index": 4,
+      "page_number": 1
+    }
+  ]
+}

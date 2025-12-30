@@ -2,12 +2,14 @@
 Validate module: Apply deterministic validation rules to extracted fields.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from __future__ import annotations
+
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
 from datetime import datetime
 from pathlib import Path
 
-from planproof.db import Database, Document, ValidationResult, ValidationStatus, ValidationCheck
-from planproof.pipeline.extract import get_extraction_result
+if TYPE_CHECKING:
+    from planproof.db import Database, ValidationCheck, ValidationStatus
 
 
 def validate_document(
@@ -31,6 +33,8 @@ def validate_document(
         db = Database()
 
     # Get extraction result
+    from planproof.pipeline.extract import get_extraction_result
+
     extraction_result = get_extraction_result(document_id, db=db)
     if extraction_result is None:
         raise ValueError(f"No extraction result found for document {document_id}")
@@ -119,6 +123,8 @@ def _validate_field(
     Returns:
         Validation result dictionary
     """
+    from planproof.db import ValidationStatus
+
     rule_type = rule.get("type", "presence")
     required = rule.get("required", False)
     pattern = rule.get("pattern")
@@ -350,6 +356,8 @@ def validate_extraction(
                         Note: JSON artefact is always created separately in main pipeline
     """
     context = context or {}
+    if write_to_tables and db:
+        from planproof.db import ValidationStatus, ValidationCheck
     fields: Dict[str, Any] = extraction.get("fields", {}) or {}
     evidence_index: Dict[str, Any] = extraction.get("evidence_index", {}) or {}
     
@@ -515,4 +523,3 @@ def validate_extraction(
     }
 
     return {"summary": summary, "findings": findings, "context": context}
-

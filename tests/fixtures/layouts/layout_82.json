@@ -1,0 +1,17 @@
+{
+  "metadata": {"page_count": 1},
+  "text_blocks": [
+    {"content": "Application form", "page_number": 1, "index": 0},
+    {"content": "Site location", "page_number": 1, "index": 1},
+    {"content": "Property Name: Unit M", "page_number": 1, "index": 2},
+    {"content": "Address Line 1: Dorset Road", "page_number": 1, "index": 3},
+    {"content": "Address Line 2: Saltley Business Park", "page_number": 1, "index": 4},
+    {"content": "Town/City: Birmingham", "page_number": 1, "index": 5},
+    {"content": "Postcode: B8 1BG", "page_number": 1, "index": 6},
+    {"content": "I/We hereby apply for Prior Approval: Prior Approval", "page_number": 1, "index": 7},
+    {"content": "Applicant Name: Daniel Green", "page_number": 1, "index": 8},
+    {"content": "planning.registration@birmingham.gov.uk", "page_number": 1, "index": 9},
+    {"content": "0121 464 3669", "page_number": 1, "index": 10}
+  ],
+  "tables": []
+}

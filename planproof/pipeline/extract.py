@@ -2,13 +2,17 @@
 Extract module: Use Document Intelligence to extract structured data from documents.
 """
 
+from __future__ import annotations
+
 import json as jsonlib
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from datetime import datetime
 
 from planproof.docintel import DocumentIntelligence
-from planproof.storage import StorageClient
-from planproof.db import Database, Document, Artefact
+
+if TYPE_CHECKING:
+    from planproof.storage import StorageClient
+    from planproof.db import Database, Document, Artefact
 
 
 def extract_document(
@@ -34,6 +38,9 @@ def extract_document(
         - artefact_blob_uri: Blob URI of stored JSON artefact
         - extraction_result: The extraction result dictionary
     """
+    from planproof.db import Document, Artefact
+    from planproof.storage import StorageClient
+
     # Initialize clients if not provided
     if docintel is None:
         docintel = DocumentIntelligence()
@@ -116,6 +123,9 @@ def get_extraction_result(
     Returns:
         Extraction result dictionary or None if not found
     """
+    from planproof.db import Artefact
+    from planproof.storage import StorageClient
+
     if storage_client is None:
         storage_client = StorageClient()
     if db is None:
@@ -402,4 +412,3 @@ def extract_from_pdf_bytes(
     result["analyzed_at"] = datetime.now(timezone.utc).isoformat()
     
     return result
-

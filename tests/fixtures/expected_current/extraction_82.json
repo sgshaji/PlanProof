@@ -1,0 +1,113 @@
+{
+  "evidence_index": {
+    "applicant_name": [
+      {
+        "block_id": "p1b8",
+        "confidence": 0.7,
+        "page": 1,
+        "snippet": "Applicant Name: Daniel Green",
+        "source_doc_type": "application_form"
+      }
+    ],
+    "postcode": [
+      {
+        "block_id": "p1b6",
+        "confidence": 0.9,
+        "page": 1,
+        "snippet": "Postcode: B8 1BG",
+        "source_doc_type": "application_form"
+      }
+    ],
+    "proposed_use": [
+      {
+        "block_id": "p1b7",
+        "confidence": 0.9,
+        "page": 1,
+        "snippet": "I/We hereby apply for Prior Approval: Prior Approval",
+        "source_doc_type": "application_form"
+      }
+    ],
+    "site_address": [
+      {
+        "block_id": "p1b1",
+        "confidence": 0.95,
+        "page": 1,
+        "snippet": "Site location",
+        "source_doc_type": "application_form"
+      }
+    ]
+  },
+  "fields": {
+    "applicant_name": "Daniel Green",
+    "applicant_name_confidence": 0.7,
+    "document_type": "application_form",
+    "postcode": "B8 1BG",
+    "postcode_confidence": 0.9,
+    "proposed_use": "Prior Approval: Prior Approval",
+    "proposed_use_confidence": 0.9,
+    "site_address": "Unit M, Dorset Road, Saltley Business Park, Birmingham, B8 1BG",
+    "site_address_confidence": 0.95
+  },
+  "metadata": {
+    "page_count": 1
+  },
+  "page_anchors": {},
+  "tables": [],
+  "text_blocks": [
+    {
+      "content": "Application form",
+      "index": 0,
+      "page_number": 1
+    },
+    {
+      "content": "Site location",
+      "index": 1,
+      "page_number": 1
+    },
+    {
+      "content": "Property Name: Unit M",
+      "index": 2,
+      "page_number": 1
+    },
+    {
+      "content": "Address Line 1: Dorset Road",
+      "index": 3,
+      "page_number": 1
+    },
+    {
+      "content": "Address Line 2: Saltley Business Park",
+      "index": 4,
+      "page_number": 1
+    },
+    {
+      "content": "Town/City: Birmingham",
+      "index": 5,
+      "page_number": 1
+    },
+    {
+      "content": "Postcode: B8 1BG",
+      "index": 6,
+      "page_number": 1
+    },
+    {
+      "content": "I/We hereby apply for Prior Approval: Prior Approval",
+      "index": 7,
+      "page_number": 1
+    },
+    {
+      "content": "Applicant Name: Daniel Green",
+      "index": 8,
+      "page_number": 1
+    },
+    {
+      "content": "planning.registration@birmingham.gov.uk",
+      "index": 9,
+      "page_number": 1
+    },
+    {
+      "content": "0121 464 3669",
+      "index": 10,
+      "page_number": 1
+    }
+  ]
+}

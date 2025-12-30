@@ -3,9 +3,6 @@ Azure Document Intelligence wrapper for document analysis.
 """
 
 from typing import Dict, List, Any, Optional
-from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.core.credentials import AzureKeyCredential
-from azure.core.exceptions import AzureError
 
 from planproof.config import get_settings
 
@@ -19,6 +16,8 @@ class DocumentIntelligence:
         api_key: Optional[str] = None
     ):
         """Initialize Document Intelligence client."""
+        from azure.ai.documentintelligence import DocumentIntelligenceClient
+        from azure.core.credentials import AzureKeyCredential
         settings = get_settings()
         endpoint = endpoint or settings.azure_docintel_endpoint
         api_key = api_key or settings.azure_docintel_key
@@ -177,4 +176,3 @@ class DocumentIntelligence:
                     text_parts.append(cell["content"])
 
         return "\n".join(text_parts)
-
