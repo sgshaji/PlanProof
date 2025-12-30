@@ -70,7 +70,14 @@ def single_pdf(pdf_path: str, application_ref: Optional[str] = None) -> Dict[str
     # 2) Extract
     # Hybrid storage: Write to both JSON artefact (blob) and relational tables (DB)
     pdf_bytes = Path(pdf_path).read_bytes()
-    extraction = extract_from_pdf_bytes(pdf_bytes, ingested, docintel=docintel, db=db, write_to_tables=True)
+    extraction = extract_from_pdf_bytes(
+        pdf_bytes,
+        ingested,
+        docintel=docintel,
+        storage_client=storage_client,
+        db=db,
+        write_to_tables=True
+    )
     
     # Save extraction artefact to blob (complete JSON for audit trail)
     # Note: Relational tables (Page, Evidence, ExtractedField) already written above
@@ -210,6 +217,9 @@ def main():
     batch_parser.add_argument("--folder", required=True, help="Path to folder containing PDFs")
     batch_parser.add_argument("--application-ref", required=True, help="Application reference for all PDFs")
     batch_parser.add_argument("--applicant-name", help="Applicant name (optional)")
+    batch_parser.add_argument("--workers", type=int, default=4, help="Parallel worker count (default: 4)")
+    batch_parser.add_argument("--page-parallelism", type=int, default=1, help="DocIntel page parallelism per PDF")
+    batch_parser.add_argument("--pages-per-batch", type=int, default=5, help="Pages per DocIntel batch")
     batch_parser.add_argument("--out", default="", help="Optional: write results JSON to a local file")
 
     # Legacy commands
@@ -246,8 +256,6 @@ def main():
             # Initialize clients
             db = Database()
             storage_client = StorageClient()
-            docintel = DocumentIntelligence()
-            aoai_client = AzureOpenAIClient()
             
             # CREATE RUN FIRST (before any processing)
             run = db.create_run(
@@ -260,9 +268,6 @@ def main():
             )
             print(f"Created run {run['id']} for batch processing")
             
-            # Reset LLM call counter for this run
-            aoai_client.reset_call_count()
-            
             # Ingest all PDFs in folder
             print(f"Ingesting PDFs from {folder_path}...")
             ingested_results = ingest_folder(
@@ -270,16 +275,23 @@ def main():
                 application_ref, 
                 applicant_name=getattr(args, 'applicant_name', None),
                 storage_client=storage_client,
-                db=db
+                db=db,
+                max_workers=args.workers
             )
             
             print(f"OK: Ingested {len(ingested_results)} PDF(s)")
             
-            # Process each document
             all_results = []
             successes = 0
             failures = 0
             errors = []
+            run_metadata = run.get("metadata", {}) or {}
+            resolved_fields = db.get_resolved_fields_for_application(application_ref)
+            resolved_fields.update(run_metadata.get("resolved_fields", {}))
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            import threading
+            lock = threading.Lock()
             
             try:
                 rules = load_rule_catalog("artefacts/rule_catalog.json")
@@ -289,33 +301,42 @@ def main():
                 db.update_run(run["id"], status="failed", error_message=error_msg)
                 sys.exit(1)
             
-            for ingested in ingested_results:
+            def _process_document(ingested: dict) -> dict:
                 if "error" in ingested:
-                    print(f"ERROR: Skipping {ingested.get('filename', 'unknown')}: {ingested['error']}")
-                    continue
-                
+                    return {
+                        "document_id": ingested.get("document_id"),
+                        "filename": ingested.get("filename", "unknown"),
+                        "error": ingested["error"]
+                    }
+
                 doc_id = ingested["document_id"]
                 print(f"Processing document {doc_id} ({ingested['filename']})...")
-                
+
                 try:
-                    # Extract using extract_document (gets from DB or creates new)
-                    extraction_result = extract_document(doc_id, docintel=docintel, storage_client=storage_client, db=db)
+                    local_docintel = DocumentIntelligence()
+                    local_storage = StorageClient()
+                    local_aoai = AzureOpenAIClient()
+
+                    extraction_result = extract_document(
+                        doc_id,
+                        docintel=local_docintel,
+                        storage_client=local_storage,
+                        db=db,
+                        use_url=True,
+                        page_parallelism=args.page_parallelism,
+                        pages_per_batch=args.pages_per_batch
+                    )
                     extraction_raw = extraction_result["extraction_result"]
-                    
-                    # Apply field mapper to extract structured fields
+
                     from planproof.pipeline.field_mapper import map_fields
                     mapped = map_fields(extraction_raw)
                     fields = mapped["fields"]
                     field_evidence = mapped["evidence_index"]
-                    
-                    # Build general evidence_index for text blocks and tables
+
                     evidence_index = {}
-                    
-                    # Add index to blocks for field mapper reference
                     for i, block in enumerate(extraction_raw.get("text_blocks", [])):
                         block["index"] = i
-                    
-                    # Extract text blocks as evidence with snippets
+
                     for i, block in enumerate(extraction_raw.get("text_blocks", [])):
                         content = block.get("content", "")
                         page_num = block.get("page_number")
@@ -326,13 +347,12 @@ def main():
                             "snippet": snippet,
                             "page_number": page_num
                         }
-                    
-                    # Extract tables as evidence with snippets
+
                     for i, table in enumerate(extraction_raw.get("tables", [])):
                         page_num = table.get("page_number")
                         cells = table.get("cells", [])
                         cell_snippets = []
-                        for cell in cells[:5]:  # First 5 cells
+                        for cell in cells[:5]:
                             if cell.get("content"):
                                 cell_snippets.append(cell["content"][:50])
                         snippet = " | ".join(cell_snippets) if cell_snippets else ""
@@ -343,12 +363,10 @@ def main():
                             "page_number": page_num,
                             "snippet": snippet
                         }
-                    
-                    # Merge field-specific evidence into general evidence_index
+
                     for field_name, ev_list in field_evidence.items():
                         evidence_index[field_name] = ev_list
-                    
-                    # Build structured extraction with mapped fields
+
                     extraction_structured = {
                         "fields": fields,
                         "evidence_index": evidence_index,
@@ -357,73 +375,78 @@ def main():
                         "tables": extraction_raw.get("tables", []),
                         "page_anchors": extraction_raw.get("page_anchors", {})
                     }
-                    
-                    # Validate
+
                     validation = validate_extraction(
-                        extraction_structured, 
-                        rules, 
+                        extraction_structured,
+                        rules,
                         context={"document_id": doc_id, "submission_id": ingested.get("submission_id")},
                         db=db,
                         write_to_tables=True
                     )
-                    
-                    # LLM gate if needed (check resolved fields from submission and application-level cache)
-                    run_metadata = run.get("metadata", {}) or {}
-                    resolved_fields = run_metadata.get("resolved_fields", {})
-                    
-                    # Load application-level resolved fields cache
-                    app_resolved = db.get_resolved_fields_for_application(application_ref)
-                    resolved_fields = {**app_resolved, **resolved_fields}  # Merge, current run takes precedence
-                    
+
+                    with lock:
+                        current_resolved = resolved_fields.copy()
+
                     llm_notes = None
-                    if should_trigger_llm(validation, extraction_structured, resolved_fields=resolved_fields, application_ref=application_ref, db=db):
+                    if should_trigger_llm(
+                        validation,
+                        extraction_structured,
+                        resolved_fields=current_resolved,
+                        application_ref=application_ref,
+                        db=db
+                    ):
                         print(f"  LLM gate triggered for document {doc_id}")
-                        llm_notes = resolve_with_llm_new(extraction_structured, validation, aoai_client=aoai_client)
+                        llm_notes = resolve_with_llm_new(extraction_structured, validation, aoai_client=local_aoai)
                         if llm_notes.get("gate_reason"):
                             reason = llm_notes["gate_reason"]
                             print(f"    Missing fields: {reason.get('missing_fields', [])}")
                             print(f"    Affected rules: {reason.get('affected_rule_ids', [])}")
-                        
-                        # Update resolved fields in run metadata
+
                         if llm_notes.get("response", {}).get("filled_fields"):
                             filled = llm_notes["response"]["filled_fields"]
-                            resolved_fields.update(filled)
-                            # Update run metadata
-                            existing_metadata = run_metadata.copy()
-                            existing_metadata["resolved_fields"] = resolved_fields
-                            db.update_run(run["id"], metadata=existing_metadata)
-                            run["metadata"] = existing_metadata  # Update local copy
-                    
-                    all_results.append({
+                            with lock:
+                                resolved_fields.update(filled)
+                                run_metadata["resolved_fields"] = resolved_fields
+                                db.update_run(run["id"], metadata=run_metadata)
+                                run["metadata"] = run_metadata
+
+                    return {
                         "document_id": doc_id,
                         "filename": ingested["filename"],
                         "validation_summary": validation.get("summary", {}),
                         "llm_triggered": llm_notes is not None,
-                        "llm_call_count": llm_notes.get("llm_call_count", 0) if llm_notes else 0
-                    })
-                    successes += 1
-                    print(f"  OK: Completed document {doc_id}")
-                    
+                        "llm_call_count": local_aoai.get_call_count()
+                    }
                 except Exception as e:
                     import traceback
                     error_details = traceback.format_exc()
-                    failures += 1
-                    error_msg = str(e)
-                    errors.append({
-                        "document_id": doc_id,
-                        "filename": ingested.get("filename", "unknown"),
-                        "error": error_msg
-                    })
                     print(f"  ERROR: Error processing document {doc_id}: {e}")
                     print(f"  Traceback: {error_details.split(chr(10))[-3] if error_details else 'N/A'}")
-                    all_results.append({
+                    return {
                         "document_id": doc_id,
                         "filename": ingested.get("filename", "unknown"),
-                        "error": error_msg
-                    })
+                        "error": str(e)
+                    }
+
+            worker_count = max(1, min(args.workers, len(ingested_results)))
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                futures = [executor.submit(_process_document, ingested) for ingested in ingested_results]
+                for future in as_completed(futures):
+                    result = future.result()
+                    all_results.append(result)
+                    if "error" in result:
+                        failures += 1
+                        errors.append({
+                            "document_id": result.get("document_id"),
+                            "filename": result.get("filename", "unknown"),
+                            "error": result["error"]
+                        })
+                    else:
+                        successes += 1
+                        print(f"  OK: Completed document {result.get('document_id')}")
             
             # Get total LLM calls for this run
-            llm_calls_per_run = aoai_client.get_call_count()
+            llm_calls_per_run = sum(r.get("llm_call_count", 0) for r in all_results)
             
             # Update submission metadata with LLM call count (if we have a submission)
             # For batch processing, all documents should be in the same submission (V0)
@@ -506,4 +529,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

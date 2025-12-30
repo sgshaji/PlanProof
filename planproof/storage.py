@@ -19,10 +19,12 @@ class StorageClient:
 
         settings = get_settings()
         conn_str = connection_string or settings.azure_storage_connection_string
+        self._connection_string = conn_str
         self.client = BlobServiceClient.from_connection_string(conn_str)
         self.inbox_container = settings.azure_storage_container_inbox
         self.artefacts_container = settings.azure_storage_container_artefacts
         self.logs_container = settings.azure_storage_container_logs
+        self._account_key = self._extract_account_key(conn_str)
 
     def upload_pdf(self, pdf_path: str, blob_name: Optional[str] = None) -> str:
         """
@@ -144,6 +146,41 @@ class StorageClient:
         blob_name = blob_name.lstrip("/")
         return f"azure://{account_name}/{container}/{blob_name}"
 
+    def get_blob_sas_url(
+        self,
+        container: str,
+        blob_name: str,
+        expiry_minutes: int = 30
+    ) -> str:
+        """
+        Generate a read-only SAS URL for a blob.
+
+        Args:
+            container: Container name
+            blob_name: Blob name
+            expiry_minutes: SAS token expiry in minutes (default: 30)
+
+        Returns:
+            A SAS URL for the blob
+        """
+        from datetime import timedelta
+        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+
+        if not self._account_key:
+            raise ValueError("Azure Storage account key not found in connection string.")
+
+        blob_name = blob_name.lstrip("/")
+        sas_token = generate_blob_sas(
+            account_name=self.client.account_name,
+            container_name=container,
+            blob_name=blob_name,
+            account_key=self._account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        )
+        url = self.client.get_blob_client(container=container, blob=blob_name).url
+        return f"{url}?{sas_token}"
+
     def download_blob(self, container: str, blob_name: str) -> bytes:
         """
         Download a blob as bytes.
@@ -177,6 +214,15 @@ class StorageClient:
             return True
         except AzureError:
             return False
+
+    @staticmethod
+    def _extract_account_key(connection_string: str) -> Optional[str]:
+        """Extract the account key from a storage connection string."""
+        parts = connection_string.split(";")
+        for part in parts:
+            if part.startswith("AccountKey="):
+                return part.split("=", 1)[1]
+        return None
 
     def write_json_blob(self, container: str, blob_path: str, obj: dict, overwrite: bool = False) -> str:
         """

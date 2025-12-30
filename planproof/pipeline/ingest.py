@@ -54,9 +54,12 @@ def ingest_pdf(
     if not pdf_path_obj.suffix.lower() == ".pdf":
         raise ValueError(f"File must be a PDF: {pdf_path}")
 
-    # Compute content hash for deduplication
-    pdf_bytes = pdf_path_obj.read_bytes()
-    content_hash = hashlib.sha256(pdf_bytes).hexdigest()
+    # Compute content hash for deduplication (streaming for large files)
+    hasher = hashlib.sha256()
+    with open(pdf_path_obj, "rb") as handle:
+        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+            hasher.update(chunk)
+    content_hash = hasher.hexdigest()
 
     # Get or create application
     application = db.get_application_by_ref(application_ref)
@@ -125,7 +128,8 @@ def ingest_folder(
     applicant_name: Optional[str] = None,
     application_date: Optional[datetime] = None,
     storage_client: Optional[StorageClient] = None,
-    db: Optional[Database] = None
+    db: Optional[Database] = None,
+    max_workers: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
     Ingest all PDFs from a folder.
@@ -158,24 +162,30 @@ def ingest_folder(
         db = Database()
 
     results = []
-    for pdf_file in pdf_files:
-        try:
-            result = ingest_pdf(
-                pdf_path=str(pdf_file),
-                application_ref=application_ref,
-                applicant_name=applicant_name,
-                application_date=application_date,
-                storage_client=storage_client,
-                db=db
-            )
-            results.append(result)
-        except Exception as e:
-            # Log error but continue with other files
-            results.append({
-                "error": str(e),
-                "filename": pdf_file.name,
-                "application_ref": application_ref
-            })
+    worker_count = max_workers or min(4, len(pdf_files)) or 1
+
+    def _ingest(file_path: Path) -> Dict[str, Any]:
+        return ingest_pdf(
+            pdf_path=str(file_path),
+            application_ref=application_ref,
+            applicant_name=applicant_name,
+            application_date=application_date,
+            storage_client=storage_client,
+            db=db
+        )
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        future_map = {executor.submit(_ingest, pdf_file): pdf_file for pdf_file in pdf_files}
+        for future in as_completed(future_map):
+            pdf_file = future_map[future]
+            try:
+                results.append(future.result())
+            except Exception as e:
+                results.append({
+                    "error": str(e),
+                    "filename": pdf_file.name,
+                    "application_ref": application_ref
+                })
 
     return results
-

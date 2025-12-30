@@ -156,6 +156,7 @@ def _process_run(
                     pdf_bytes,
                     ingested_with_context,
                     docintel=docintel,
+                    storage_client=storage_client,
                     db=db,
                     write_to_tables=True
                 )
@@ -523,4 +524,3 @@ def get_run_results(run_id: int) -> Dict[str, Any]:
         return {"error": f"Error retrieving results: {str(e)}"}
     finally:
         session.close()
-
