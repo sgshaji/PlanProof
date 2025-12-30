@@ -90,3 +90,30 @@ def test_reject_disclaimer_blocks_for_site_address():
     fields = result["fields"]
 
     assert "site_address" not in fields
+
+
+def test_proposed_use_extracted_from_prior_approval_phrase():
+    extracted = {
+        "text_blocks": [
+            _block("I/We hereby apply for Prior Approval: Change of use to HMO", 0),
+        ]
+    }
+
+    result = map_fields(extracted)
+
+    proposed_use = result["fields"]["proposed_use"]
+    assert proposed_use.startswith("Prior Approval")
+    assert proposed_use.endswith("Change of use to HMO")
+    assert result["fields"]["proposed_use_confidence"] == 0.9
+
+
+def test_reject_date_like_string_as_applicant_phone():
+    extracted = {
+        "text_blocks": [
+            _block("01/02/2024", 0),
+        ]
+    }
+
+    result = map_fields(extracted)
+
+    assert "applicant_phone" not in result["fields"]

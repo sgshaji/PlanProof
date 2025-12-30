@@ -4,13 +4,36 @@ Test script to verify all ground-truth fixes are working correctly.
 Tests the 3 documents from run 10 with expected values.
 """
 
-import sys
 import json
+import os
+import sys
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+import pytest
+
+project_root = Path(__file__).resolve().parents[1]
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+required_env = [
+    "DATABASE_URL",
+    "AZURE_STORAGE_CONNECTION_STRING",
+    "AZURE_DOCINTEL_ENDPOINT",
+    "AZURE_DOCINTEL_KEY",
+    "AZURE_OPENAI_ENDPOINT",
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_OPENAI_CHAT_DEPLOYMENT",
+]
+missing_env = [name for name in required_env if not os.getenv(name)]
+if missing_env:
+    pytest.skip(
+        f"Missing required environment variables for integration test: {', '.join(missing_env)}",
+        allow_module_level=True,
+    )
+
+pytest.importorskip("psycopg")
+pytest.importorskip("azure.storage.blob")
+pytest.importorskip("azure.ai.documentintelligence")
 
 from planproof.pipeline.ingest import ingest_pdf
 from planproof.pipeline.extract import extract_from_pdf_bytes
@@ -19,6 +42,75 @@ from planproof.pipeline.llm_gate import should_trigger_llm
 from planproof.db import Database
 from planproof.storage import StorageClient
 from planproof.docintel import DocumentIntelligence
+
+TEST_DIR = Path("runs/10/inputs")
+
+
+def _download_test_inputs() -> None:
+    if TEST_DIR.exists():
+        return
+
+    from azure.storage.blob import BlobServiceClient
+
+    connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    container_name = os.getenv("AZURE_STORAGE_CONTAINER_INBOX") or os.getenv(
+        "AZURE_STORAGE_CONTAINER_NAME"
+    )
+    if not connection_string or not container_name:
+        return
+
+    service_client = BlobServiceClient.from_connection_string(
+        connection_string,
+        connection_timeout=5,
+        read_timeout=5,
+    )
+    container_client = service_client.get_container_client(container_name)
+    explicit_blobs = os.getenv("AZURE_TEST_INPUT_BLOBS")
+    if explicit_blobs:
+        pdf_blobs = [name.strip() for name in explicit_blobs.split(",") if name.strip()]
+    else:
+        if os.getenv("AZURE_TEST_ALLOW_LISTING") != "1":
+            print(
+                "⚠️  Skipping blob listing. Set AZURE_TEST_INPUT_BLOBS with blob names or "
+                "AZURE_TEST_ALLOW_LISTING=1 to list automatically."
+            )
+            return
+        try:
+            pdf_blobs = sorted(
+                blob.name
+                for blob in container_client.list_blobs()
+                if blob.name.lower().endswith(".pdf")
+            )
+        except Exception as exc:
+            print(f"⚠️  Unable to list blobs for integration inputs: {exc}")
+            return
+
+    if not pdf_blobs:
+        return
+
+    TEST_DIR.mkdir(parents=True, exist_ok=True)
+    for blob_name in pdf_blobs[:3]:
+        target_path = TEST_DIR / Path(blob_name).name
+        if target_path.exists():
+            continue
+        downloader = container_client.download_blob(blob_name)
+        target_path.write_bytes(downloader.readall())
+
+
+_download_test_inputs()
+
+if not TEST_DIR.exists():
+    pytest.skip(
+        f"Missing integration test inputs at {TEST_DIR}.",
+        allow_module_level=True,
+    )
+
+TEST_FILES = sorted(TEST_DIR.glob("*.pdf"))
+if not TEST_FILES:
+    pytest.skip(
+        f"No PDF files found in {TEST_DIR} for integration test.",
+        allow_module_level=True,
+    )
 
 # Expected ground truth values
 EXPECTED = {
@@ -258,6 +350,14 @@ def test_document(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
         return {"error": str(e), "filename": file_path.name}
 
 
+@pytest.mark.parametrize("file_path", TEST_FILES, ids=lambda p: p.name)
+def test_document_fixture(file_path: Path):
+    expected = EXPECTED.get(file_path.name, {})
+    result = test_document(file_path, expected, app_ref="TEST-2025")
+    assert "error" not in result, f"Integration test error for {file_path.name}"
+    assert not result.get("issues"), f"Integration issues for {file_path.name}: {result['issues']}"
+
+
 def main():
     """Run tests on all 3 documents."""
     print("="*70)
@@ -269,12 +369,12 @@ def main():
     if not test_dir.exists():
         print(f"❌ Test directory not found: {test_dir}")
         return
-    
+
     test_files = list(test_dir.glob("*.pdf"))
     if not test_files:
         print(f"❌ No PDF files found in {test_dir}")
         return
-    
+
     print(f"\nFound {len(test_files)} test files")
     
     results = []
