@@ -155,23 +155,19 @@ def ingest_folder(
     if not pdf_files:
         raise ValueError(f"No PDF files found in folder: {folder_path}")
 
-    # Initialize clients if not provided
-    if storage_client is None:
-        storage_client = StorageClient()
-    if db is None:
-        db = Database()
-
     results = []
     worker_count = max_workers or min(4, len(pdf_files)) or 1
 
     def _ingest(file_path: Path) -> Dict[str, Any]:
+        local_storage_client = storage_client or StorageClient()
+        local_db = db or Database()
         return ingest_pdf(
             pdf_path=str(file_path),
             application_ref=application_ref,
             applicant_name=applicant_name,
             application_date=application_date,
-            storage_client=storage_client,
-            db=db
+            storage_client=local_storage_client,
+            db=local_db
         )
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
