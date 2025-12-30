@@ -8,8 +8,6 @@ import time
 
 from azure.core.exceptions import AzureError
 
-from azure.core.exceptions import AzureError
-
 from planproof.config import get_settings
 
 
@@ -136,16 +134,23 @@ class DocumentIntelligence:
         pdf_bytes: bytes,
         model: str = "prebuilt-layout",
         pages_per_batch: int = 5,
-        max_workers: int = 4
+        max_workers: int = 4,
+        document_url: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Analyze a document by splitting into page ranges and running in parallel.
+
+        When a SAS URL is available, use URL-based requests with page filters to
+        avoid re-uploading the full PDF for each batch (network-light, API-side
+        fetch). If a URL isn't available, split the PDF into per-range files and
+        upload only those bytes (CPU-heavy locally, lower upload volume).
 
         Args:
             pdf_bytes: PDF file content as bytes
             model: Model to use
             pages_per_batch: Number of pages per analysis request
             max_workers: Number of parallel workers
+            document_url: Optional SAS URL for URL-based parallel analysis
 
         Returns:
             Normalized dictionary merged from all page ranges
@@ -154,21 +159,40 @@ class DocumentIntelligence:
 
         page_count = self._get_pdf_page_count(pdf_bytes)
         if page_count <= pages_per_batch:
+            if document_url:
+                return self.analyze_document_url(document_url, model=model)
             return self.analyze_document(pdf_bytes, model=model)
 
         page_ranges = []
         for start in range(1, page_count + 1, pages_per_batch):
             end = min(start + pages_per_batch - 1, page_count)
-            page_ranges.append(f"{start}-{end}")
+            page_ranges.append((start, end))
 
         results = []
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(self.analyze_document, pdf_bytes, model, [page_range]): page_range
-                for page_range in page_ranges
-            }
-            for future in as_completed(futures):
-                results.append(future.result())
+        if document_url:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        self.analyze_document_url,
+                        document_url,
+                        model,
+                        [f"{start}-{end}"]
+                    ): (start, end)
+                    for start, end in page_ranges
+                }
+                for future in as_completed(futures):
+                    results.append(future.result())
+        else:
+            split_pdfs = self._split_pdf_by_ranges(pdf_bytes, page_ranges)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self.analyze_document, split_pdf, model): (start, end)
+                    for (start, end), split_pdf in zip(page_ranges, split_pdfs)
+                }
+                for future in as_completed(futures):
+                    start, _end = futures[future]
+                    result = self._offset_result_pages(future.result(), start - 1)
+                    results.append(result)
 
         return self._merge_results(results, model, page_count)
 
@@ -292,6 +316,40 @@ class DocumentIntelligence:
 
         reader = PdfReader(BytesIO(pdf_bytes))
         return len(reader.pages)
+
+    @staticmethod
+    def _split_pdf_by_ranges(
+        pdf_bytes: bytes,
+        page_ranges: List[tuple]
+    ) -> List[bytes]:
+        """Split a PDF into per-range PDF byte blobs."""
+        from pypdf import PdfReader, PdfWriter
+        from io import BytesIO
+
+        reader = PdfReader(BytesIO(pdf_bytes))
+        split_bytes = []
+        for start, end in page_ranges:
+            writer = PdfWriter()
+            for page_index in range(start - 1, end):
+                writer.add_page(reader.pages[page_index])
+            buffer = BytesIO()
+            writer.write(buffer)
+            split_bytes.append(buffer.getvalue())
+
+        return split_bytes
+
+    @staticmethod
+    def _offset_result_pages(result: Dict[str, Any], page_offset: int) -> Dict[str, Any]:
+        """Offset page numbers in a normalized result."""
+        if page_offset == 0:
+            return result
+        for block in result.get("text_blocks", []):
+            if block.get("page_number"):
+                block["page_number"] += page_offset
+        for table in result.get("tables", []):
+            if table.get("page_number"):
+                table["page_number"] += page_offset
+        return result
 
     def _extract_bounding_box(self, bounding_region) -> Optional[Dict[str, float]]:
         """Extract bounding box coordinates from a bounding region."""
