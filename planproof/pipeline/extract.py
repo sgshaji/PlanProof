@@ -81,16 +81,45 @@ def extract_document(
         if page_parallelism > 1:
             pdf_bytes = storage_client.download_blob(container, blob_name)
             docintel_start = time.perf_counter()
-            extraction_result = docintel.analyze_document_parallel(
-                pdf_bytes,
-                model=model,
-                pages_per_batch=pages_per_batch,
-                max_workers=page_parallelism
-            )
+            document_url = None
+            if use_url:
+                try:
+                    document_url = storage_client.get_blob_sas_url(container, blob_name)
+                except Exception as exc:
+                    LOGGER.warning(
+                        "docintel_parallel_url_fallback",
+                        extra={"document_id": document_id, "error": str(exc)},
+                    )
+                    document_url = None
+            docintel_source = "url_parallel" if document_url else "bytes_parallel"
+            try:
+                extraction_result = docintel.analyze_document_parallel(
+                    pdf_bytes,
+                    model=model,
+                    pages_per_batch=pages_per_batch,
+                    max_workers=page_parallelism,
+                    document_url=document_url
+                )
+            except Exception as exc:
+                if document_url:
+                    LOGGER.warning(
+                        "docintel_parallel_url_failed",
+                        extra={"document_id": document_id, "error": str(exc)},
+                    )
+                    extraction_result = docintel.analyze_document_parallel(
+                        pdf_bytes,
+                        model=model,
+                        pages_per_batch=pages_per_batch,
+                        max_workers=page_parallelism,
+                        document_url=None
+                    )
+                    docintel_source = "bytes_parallel"
+                else:
+                    raise
             extraction_result["metadata"]["docintel_ms"] = int(
                 (time.perf_counter() - docintel_start) * 1000
             )
-            extraction_result["metadata"]["docintel_source"] = "bytes_parallel"
+            extraction_result["metadata"]["docintel_source"] = docintel_source
         elif use_url:
             try:
                 document_url = storage_client.get_blob_sas_url(container, blob_name)
