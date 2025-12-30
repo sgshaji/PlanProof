@@ -311,6 +311,71 @@ def render():
                 if error.get("traceback"):
                     st.code(error.get("traceback"), language="text")
     
+    # Request Info section
+    st.markdown("---")
+    st.markdown("### Request More Information")
+    
+    request_info_col1, request_info_col2 = st.columns([3, 1])
+    
+    with request_info_col1:
+        request_info_notes = st.text_area(
+            "Information Needed",
+            key=f"request_info_notes_{run_id}",
+            placeholder="Describe what additional information is required from the applicant...",
+            help="Specify what documents or clarifications are needed"
+        )
+    
+    with request_info_col2:
+        if st.button("📤 Request Info", key=f"request_info_btn_{run_id}", type="secondary"):
+            if not request_info_notes or not request_info_notes.strip():
+                st.error("Please specify what information is needed")
+            else:
+                try:
+                    # Update submission status to needs_info
+                    from planproof.db import Database, Submission
+                    db = Database()
+                    session = db.get_session()
+                    
+                    try:
+                        # Find submission for this run
+                        from planproof.db import Run
+                        run = session.query(Run).filter(Run.id == run_id).first()
+                        
+                        if run and run.application_id:
+                            # Get latest submission for application
+                            submission = session.query(Submission).filter(
+                                Submission.planning_case_id == run.application_id
+                            ).order_by(Submission.created_at.desc()).first()
+                            
+                            if submission:
+                                # Update status
+                                submission.status = "needs_info"
+                                
+                                # Store request in metadata
+                                metadata = submission.submission_metadata or {}
+                                if "info_requests" not in metadata:
+                                    metadata["info_requests"] = []
+                                
+                                metadata["info_requests"].append({
+                                    "requested_at": datetime.now().isoformat(),
+                                    "notes": request_info_notes.strip(),
+                                    "run_id": run_id
+                                })
+                                
+                                submission.submission_metadata = metadata
+                                session.commit()
+                                
+                                st.success("✅ Information request recorded! Submission marked as 'needs_info'")
+                            else:
+                                st.error("Could not find submission for this run")
+                        else:
+                            st.error("Could not find run details")
+                    finally:
+                        session.close()
+                
+                except Exception as e:
+                    st.error(f"Error recording request: {str(e)}")
+    
     # Export buttons
     st.markdown("---")
     st.markdown("### Export Results")

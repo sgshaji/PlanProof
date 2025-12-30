@@ -8,6 +8,97 @@ from planproof.db import Database, Application, Submission, ValidationCheck, Cha
 from planproof.ui.run_orchestrator import get_run_results
 
 
+def _render_delta_details(changeset_id: int, submission_id: int):
+    """Render delta detail view showing all changes."""
+    from planproof.db import ChangeSet, ChangeItem
+    
+    db = Database()
+    session = db.get_session()
+    
+    try:
+        changeset = session.query(ChangeSet).filter(ChangeSet.id == changeset_id).first()
+        
+        if not changeset:
+            st.error("ChangeSet not found")
+            return
+        
+        change_items = session.query(ChangeItem).filter(
+            ChangeItem.change_set_id == changeset_id
+        ).all()
+        
+        st.markdown("---")
+        st.markdown(f"### 🔄 Delta Details (ChangeSet {changeset_id})")
+        
+        # Summary metrics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Changes", len(change_items))
+        
+        with col2:
+            st.metric("Significance", f"{changeset.significance_score:.2f}")
+        
+        with col3:
+            st.metric("Revalidation", changeset.requires_validation)
+        
+        # Group changes by type
+        field_deltas = [c for c in change_items if c.change_type == "field_delta"]
+        doc_deltas = [c for c in change_items if c.change_type == "document_delta"]
+        spatial_deltas = [c for c in change_items if c.change_type == "spatial_metric_delta"]
+        
+        # Field changes
+        if field_deltas:
+            st.markdown("#### 📝 Field Changes")
+            for item in field_deltas:
+                with st.expander(f"{item.field_key or 'Unknown field'}"):
+                    col_d1, col_d2 = st.columns(2)
+                    
+                    with col_d1:
+                        st.markdown("**Old Value:**")
+                        st.code(item.old_value or "N/A", language="text")
+                    
+                    with col_d2:
+                        st.markdown("**New Value:**")
+                        st.code(item.new_value or "N/A", language="text")
+                    
+                    if item.change_metadata:
+                        st.json(item.change_metadata)
+        
+        # Document changes
+        if doc_deltas:
+            st.markdown("#### 📄 Document Changes")
+            for item in doc_deltas:
+                action = item.change_metadata.get("action", "unknown") if item.change_metadata else "unknown"
+                with st.expander(f"{item.document_type or 'Unknown'} - {action.upper()}"):
+                    col_d1, col_d2 = st.columns(2)
+                    
+                    with col_d1:
+                        st.markdown("**Old:**")
+                        st.code(item.old_value or "N/A", language="text")
+                    
+                    with col_d2:
+                        st.markdown("**New:**")
+                        st.code(item.new_value or "N/A", language="text")
+        
+        # Spatial changes
+        if spatial_deltas:
+            st.markdown("#### 📐 Spatial Metric Changes")
+            for item in spatial_deltas:
+                with st.expander(f"{item.field_key or 'Unknown metric'}"):
+                    col_d1, col_d2 = st.columns(2)
+                    
+                    with col_d1:
+                        st.markdown("**Old Value:**")
+                        st.code(item.old_value or "N/A", language="text")
+                    
+                    with col_d2:
+                        st.markdown("**New Value:**")
+                        st.code(item.new_value or "N/A", language="text")
+    
+    finally:
+        session.close()
+
+
 def get_case_overview(application_ref: str, db: Optional[Database] = None) -> Dict[str, Any]:
     """
     Get case overview data including all submissions and their validation status.
@@ -210,9 +301,9 @@ def render():
                 with col_delta3:
                     st.metric("Revalidation", changeset['requires_validation'])
                 
-                # Link to delta view (future feature)
+                # Link to delta view
                 if st.button(f"View Delta Details", key=f"delta_{sub['submission_id']}"):
-                    st.info("Delta detail view coming soon...")
+                    _render_delta_details(changeset['changeset_id'], sub['submission_id'])
             
             # Action buttons
             st.markdown("---")
