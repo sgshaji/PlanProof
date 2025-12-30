@@ -23,3 +23,4 @@ az storage container create --name "logs" --account-name $stg --account-key $stg
 Write-Host "Storage account created: $stg"
 Write-Host "Containers created: inbox, artefacts, logs"
 
+

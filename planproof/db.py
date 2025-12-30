@@ -211,11 +211,11 @@ class ChangeItem(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     change_set_id = Column(Integer, ForeignKey("change_sets.id"), nullable=False, index=True)
     change_type = Column(String(50), nullable=False)  # "field_delta", "document_delta", "spatial_metric_delta"
-    item_key = Column(String(100), nullable=False)  # Field name, document filename, metric name
+    field_key = Column(String(100), nullable=True)  # Field name (for field_delta)
+    document_type = Column(String(50), nullable=True)  # Document type (for document_delta)
     old_value = Column(Text, nullable=True)
     new_value = Column(Text, nullable=True)
-    significance = Column(String(20), nullable=True)  # "low", "medium", "high"
-    impacted_rule_ids = Column(JSON, nullable=True)  # List of rule IDs that need revalidation
+    change_metadata = Column(JSON, nullable=True)  # Additional metadata (action, significance, etc.)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
@@ -298,6 +298,44 @@ class ValidationResult(Base):
 
     # Relationships
     document = relationship("Document", back_populates="validation_results")
+
+
+class OfficerOverride(Base):
+    """Officer override for validation results - preserves system truth while recording officer decisions."""
+    __tablename__ = "officer_overrides"
+    
+    override_id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=True, index=True)
+    validation_result_id = Column(Integer, ForeignKey("validation_results.id"), nullable=True, index=True)
+    validation_check_id = Column(Integer, ForeignKey("validation_checks.id"), nullable=True, index=True)
+    original_status = Column(String(20), nullable=False)  # Original system result
+    override_status = Column(String(20), nullable=False)  # Officer decision (pass, fail, needs_review)
+    notes = Column(Text, nullable=False)  # Mandatory explanation
+    officer_id = Column(String(100), nullable=False)  # User identifier
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    run = relationship("Run")
+    validation_result = relationship("ValidationResult")
+    validation_check = relationship("ValidationCheck")
+
+
+class FieldResolution(Base):
+    """Field resolution - officer selection of canonical value when conflicts exist."""
+    __tablename__ = "field_resolutions"
+    
+    resolution_id = Column(Integer, primary_key=True, autoincrement=True)
+    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False, index=True)
+    field_key = Column(String(100), nullable=False, index=True)
+    chosen_extracted_field_id = Column(Integer, ForeignKey("extracted_fields.id"), nullable=True)
+    chosen_value = Column(String(500), nullable=True)  # Denormalized for quick access
+    officer_id = Column(String(100), nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    submission = relationship("Submission")
+    extracted_field = relationship("ExtractedField")
 
 
 class Run(Base):

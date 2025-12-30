@@ -6,12 +6,44 @@ import streamlit as st
 import json
 import zipfile
 from pathlib import Path
+from datetime import datetime
 from planproof.ui.run_orchestrator import get_run_results
+from planproof.ui.components.document_viewer import render_document_viewer, check_pdf_library
+from planproof.services.officer_override import create_override, get_override_history
+
+
+def _render_document_viewer_section():
+    """Render the document viewer in a dedicated section."""
+    st.title("📄 Document Viewer")
+    
+    document_path = st.session_state.get("viewer_document_path")
+    document_id = st.session_state.get("viewer_document_id")
+    page = st.session_state.get("viewer_page", 1)
+    bbox = st.session_state.get("viewer_bbox")
+    
+    if not document_path or not Path(document_path).exists():
+        st.error("Document not found")
+        return
+    
+    st.info(f"📍 Viewing evidence at Page {page}")
+    
+    render_document_viewer(
+        document_path=document_path,
+        page_number=page,
+        bbox=bbox,
+        document_id=document_id,
+        zoom_level="fit-width"
+    )
 
 
 def render():
     """Render the results page."""
     st.title("📋 Validation Results")
+    
+    # Check PDF library availability
+    pdf_available, pdf_library = check_pdf_library()
+    if not pdf_available:
+        st.warning("⚠️ PDF viewer not available. Install PyMuPDF or pdf2image to view documents.")
     
     # Get run_id from session state or allow manual input
     run_id_input = st.text_input(
@@ -35,6 +67,14 @@ def render():
     
     if "error" in results:
         st.error(results["error"])
+        return
+    
+    # Check if document viewer should be shown
+    if st.session_state.get("show_viewer", False):
+        _render_document_viewer_section()
+        if st.button("← Back to Results"):
+            st.session_state["show_viewer"] = False
+            st.rerun()
         return
     
     # Summary cards
@@ -107,8 +147,18 @@ def render():
         
         # Display findings
         for idx, finding in enumerate(filtered_findings):
+            # Check for existing overrides
+            finding_key = f"{finding.get('rule_id')}_{finding.get('document_id')}"
+            override_history = st.session_state.get(f"override_history_{finding_key}", [])
+            
+            # Determine display status (show override if exists)
+            display_status = finding.get('status', 'unknown')
+            if override_history:
+                latest_override = override_history[0]
+                display_status = f"{latest_override['override_status']} (OVERRIDDEN)"
+            
             with st.expander(
-                f"{finding.get('rule_id', 'Unknown')} - {finding.get('status', 'unknown').upper()} "
+                f"{finding.get('rule_id', 'Unknown')} - {display_status.upper()} "
                 f"({finding.get('document_name', 'unknown')})"
             ):
                 col1, col2 = st.columns(2)
@@ -124,19 +174,132 @@ def render():
                     if finding.get('missing_fields'):
                         st.markdown(f"**Missing Fields:** {', '.join(finding['missing_fields'])}")
                 
+                # Override section
+                st.markdown("---")
+                st.markdown("### Officer Override")
+                
+                # Show existing overrides
+                if override_history:
+                    with st.expander(f"📋 Override History ({len(override_history)} override(s))"):
+                        for override in override_history:
+                            st.markdown(f"**Override by:** {override['officer_id']}")
+                            st.markdown(f"**Original:** {override['original_status']} → **Override:** {override['override_status']}")
+                            st.markdown(f"**Notes:** {override['notes']}")
+                            st.markdown(f"**Date:** {override['created_at']}")
+                            st.markdown("---")
+                
+                # Override form
+                override_col1, override_col2, override_col3 = st.columns([2, 2, 1])
+                
+                with override_col1:
+                    override_status = st.selectbox(
+                        "Override Status",
+                        ["pass", "fail", "needs_review"],
+                        key=f"override_status_{finding_key}_{idx}",
+                        help="Select the override status"
+                    )
+                
+                with override_col2:
+                    officer_id = st.text_input(
+                        "Officer ID",
+                        key=f"officer_id_{finding_key}_{idx}",
+                        placeholder="Enter your officer ID",
+                        help="Your user identifier"
+                    )
+                
+                override_notes = st.text_area(
+                    "Override Notes (Required)",
+                    key=f"override_notes_{finding_key}_{idx}",
+                    placeholder="Explain why you are overriding this result...",
+                    help="Mandatory explanation for the override"
+                )
+                
+                with override_col3:
+                    if st.button(
+                        "✓ Override",
+                        key=f"override_btn_{finding_key}_{idx}",
+                        type="primary"
+                    ):
+                        if not override_notes or not override_notes.strip():
+                            st.error("Override notes are required")
+                        elif not officer_id or not officer_id.strip():
+                            st.error("Officer ID is required")
+                        else:
+                            try:
+                                # Create override (using validation_result_id if available)
+                                override_id = create_override(
+                                    validation_result_id=None,  # Would need to get from finding
+                                    validation_check_id=None,  # Would need to get from finding
+                                    original_status=finding.get('status', 'unknown'),
+                                    override_status=override_status,
+                                    notes=override_notes.strip(),
+                                    officer_id=officer_id.strip(),
+                                    run_id=run_id
+                                )
+                                
+                                st.success(f"Override created successfully! ID: {override_id}")
+                                
+                                # Refresh override history
+                                # Note: In production, this would query the database
+                                st.session_state[f"override_history_{finding_key}"] = [{
+                                    "override_id": override_id,
+                                    "original_status": finding.get('status'),
+                                    "override_status": override_status,
+                                    "notes": override_notes.strip(),
+                                    "officer_id": officer_id.strip(),
+                                    "created_at": datetime.now().isoformat()
+                                }] + override_history
+                                
+                                st.rerun()
+                            
+                            except Exception as e:
+                                st.error(f"Error creating override: {str(e)}")
+                
                 # Evidence section
+                evidence_enhanced = finding.get("evidence_enhanced", [])
                 evidence = finding.get("evidence", {})
-                if evidence:
+                
+                if evidence_enhanced or evidence:
                     st.markdown("**Evidence:**")
                     
-                    evidence_snippets = evidence.get("evidence_snippets", [])
-                    if evidence_snippets:
-                        for ev in evidence_snippets[:3]:  # Show top 3
+                    # Use enhanced evidence if available
+                    if evidence_enhanced:
+                        for idx, ev in enumerate(evidence_enhanced[:5]):  # Show top 5
                             page = ev.get("page", "?")
                             snippet = ev.get("snippet", "")
-                            st.code(f"Page {page}: {snippet}", language="text")
+                            document_path = ev.get("document_path")
+                            document_id = ev.get("document_id")
+                            bbox = ev.get("bbox")
+                            
+                            col_ev1, col_ev2 = st.columns([4, 1])
+                            
+                            with col_ev1:
+                                st.code(f"Page {page}: {snippet}", language="text")
+                            
+                            with col_ev2:
+                                if pdf_available and document_path and Path(document_path).exists():
+                                    if st.button(
+                                        "📄 View",
+                                        key=f"view_evidence_{finding.get('rule_id')}_{document_id}_{page}_{idx}",
+                                        help="Open document at this evidence location"
+                                    ):
+                                        # Store viewer state
+                                        st.session_state["show_viewer"] = True
+                                        st.session_state["viewer_document_path"] = document_path
+                                        st.session_state["viewer_document_id"] = document_id
+                                        st.session_state["viewer_page"] = page
+                                        st.session_state["viewer_bbox"] = bbox
+                                        st.rerun()
                     else:
-                        st.info("No evidence snippets available")
+                        # Fallback to old evidence format
+                        evidence_snippets = evidence.get("evidence_snippets", [])
+                        if evidence_snippets:
+                            for ev in evidence_snippets[:3]:  # Show top 3
+                                page = ev.get("page", "?")
+                                snippet = ev.get("snippet", "")
+                                st.code(f"Page {page}: {snippet}", language="text")
+                        else:
+                            st.info("No evidence snippets available")
     
     # Errors section
     errors = results.get("errors", [])

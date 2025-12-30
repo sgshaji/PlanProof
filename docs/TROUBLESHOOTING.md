@@ -82,11 +82,34 @@ python scripts/utilities/check_blobs.py
 
 ## Performance Issues
 
-### Slow batch processing
+### Slow batch processing (>5 minutes per document)
 
-- Documents are processed sequentially; consider parallelization
-- Check Document Intelligence API rate limits
-- Verify network connectivity to Azure
+**First, diagnose the bottleneck:**
+```bash
+python scripts/utilities/profile_processing.py "path/to/document.pdf"
+```
+
+**Common causes:**
+1. **Document Intelligence API is slow** (most common)
+   - Large/complex documents take longer
+   - Network latency to Azure
+   - Azure service throttling/rate limits
+   - See [Performance Troubleshooting Guide](PERFORMANCE_TROUBLESHOOTING.md) for details
+
+2. **Documents being re-processed unnecessarily**
+   - Check if document caching is working
+   - Same content hash should reuse extraction
+
+3. **Network connectivity issues**
+   - Test with `python scripts/smoke_test.py`
+   - Check Azure service status
+
+**Expected processing times:**
+- Small documents (1-5 pages): 5-15 seconds
+- Medium documents (6-20 pages): 15-45 seconds  
+- Large documents (21+ pages): 45-120 seconds
+
+For detailed performance troubleshooting, see [PERFORMANCE_TROUBLESHOOTING.md](PERFORMANCE_TROUBLESHOOTING.md).
 
 ### High LLM costs
 

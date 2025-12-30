@@ -140,7 +140,7 @@ EXPECTED = {
     }
 }
 
-def test_document(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
+def _test_document_helper(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
     """Test a single document against expected values."""
     print(f"\n{'='*70}")
     print(f"Testing: {file_path.name}")
@@ -185,9 +185,11 @@ def test_document(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
         # Validate
         print("\n3. Validating...")
         rules = load_rule_catalog("artefacts/rule_catalog.json")
+        # Filter to only FIELD_REQUIRED rules for this test (avoid DB queries in category validators)
+        field_required_rules = [r for r in rules if r.rule_category == "FIELD_REQUIRED"]
         validation = validate_extraction(
             extraction,
-            rules,
+            field_required_rules,
             context={"document_id": doc_id, "submission_id": ingested.get("submission_id")},
             db=db,
             write_to_tables=False
@@ -353,7 +355,7 @@ def test_document(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
 @pytest.mark.parametrize("file_path", TEST_FILES, ids=lambda p: p.name)
 def test_document_fixture(file_path: Path):
     expected = EXPECTED.get(file_path.name, {})
-    result = test_document(file_path, expected, app_ref="TEST-2025")
+    result = _test_document_helper(file_path, expected, app_ref="TEST-2025")
     assert "error" not in result, f"Integration test error for {file_path.name}"
     assert not result.get("issues"), f"Integration issues for {file_path.name}: {result['issues']}"
 
@@ -380,7 +382,7 @@ def main():
     results = []
     for pdf_file in sorted(test_files):
         expected = EXPECTED.get(pdf_file.name, {})
-        result = test_document(pdf_file, expected, app_ref="TEST-2025")
+        result = _test_document_helper(pdf_file, expected, app_ref="TEST-2025")
         results.append(result)
     
     # Overall summary

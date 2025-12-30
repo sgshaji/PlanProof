@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "source": "validation_requirements.md",
-  "rule_count": 4,
+  "rule_count": 9,
   "rules": [
     {
       "rule_id": "R1",
@@ -23,7 +23,8 @@
       },
       "severity": "error",
       "applies_to": ["application_form"],
-      "tags": []
+      "tags": [],
+      "rule_category": "FIELD_REQUIRED"
     },
     {
       "rule_id": "R1-SITE-NOTICE",
@@ -47,7 +48,8 @@
       },
       "severity": "warning",
       "applies_to": ["site_notice"],
-      "tags": []
+      "tags": [],
+      "rule_category": "FIELD_REQUIRED"
     },
     {
       "rule_id": "R2",
@@ -70,7 +72,8 @@
       },
       "severity": "error",
       "applies_to": ["application_form", "design_statement"],
-      "tags": []
+      "tags": [],
+      "rule_category": "FIELD_REQUIRED"
     },
     {
       "rule_id": "R3",
@@ -88,7 +91,101 @@
       },
       "severity": "error",
       "applies_to": ["application_form"],
-      "tags": []
+      "tags": [],
+      "rule_category": "FIELD_REQUIRED"
+    },
+    {
+      "rule_id": "R-DOC-001",
+      "title": "Application Form Required",
+      "description": "All planning applications must include an application form.",
+      "required_fields": [
+        "application_form"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["document_check"],
+      "rule_category": "DOCUMENT_REQUIRED"
+    },
+    {
+      "rule_id": "R-DOC-002",
+      "title": "Site Plan Required",
+      "description": "All planning applications must include a site plan showing the location and boundaries.",
+      "required_fields": [
+        "site_plan"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["document_check"],
+      "rule_category": "DOCUMENT_REQUIRED"
+    },
+    {
+      "rule_id": "R-CONS-001",
+      "title": "Postcode Consistency",
+      "description": "Postcode must be consistent across all documents where it appears.",
+      "required_fields": [
+        "postcode"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["postcode"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["consistency_check"],
+      "rule_category": "CONSISTENCY"
+    },
+    {
+      "rule_id": "R-CONS-002",
+      "title": "Site Address Consistency",
+      "description": "Site address must be consistent across all documents where it appears.",
+      "required_fields": [
+        "site_address"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["address", "site"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["consistency_check"],
+      "rule_category": "CONSISTENCY"
+    },
+    {
+      "rule_id": "R-MOD-001",
+      "title": "Modification Parent Reference",
+      "description": "Modification submissions (V1+) must reference the parent V0 submission and have a complete delta computation.",
+      "required_fields": [],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["modification_check"],
+      "rule_category": "MODIFICATION"
     }
   ]
 }

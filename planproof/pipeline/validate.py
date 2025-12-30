@@ -423,10 +423,428 @@ def load_rule_catalog(path: str | Path = "artefacts/rule_catalog.json") -> List[
                 severity=r.get("severity", "error"),
                 applies_to=r.get("applies_to", []),
                 tags=r.get("tags", []),
-                required_fields_any=r.get("required_fields_any", False)  # Support OR logic
+                required_fields_any=r.get("required_fields_any", False),  # Support OR logic
+                rule_category=r.get("rule_category", "FIELD_REQUIRED")
             )
         )
     return rules
+
+
+def _dispatch_by_category(
+    rule: Rule,
+    context: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """
+    Dispatch rule to category-specific validator.
+    
+    Args:
+        rule: Rule to validate
+        context: Context dict with extraction, fields, evidence_index, document_id, submission_id, etc.
+    
+    Returns:
+        Finding dict or None if rule doesn't apply
+    """
+    category = rule.rule_category.upper()
+    
+    if category == "DOCUMENT_REQUIRED":
+        return _validate_document_required(rule, context)
+    elif category == "CONSISTENCY":
+        return _validate_consistency(rule, context)
+    elif category == "MODIFICATION":
+        return _validate_modification(rule, context)
+    elif category == "SPATIAL":
+        return _validate_spatial(rule, context)
+    elif category == "FIELD_REQUIRED":
+        # Default field validation (existing logic)
+        return None  # Will be handled by existing logic
+    else:
+        LOGGER.warning(f"Unknown rule category: {category} for rule {rule.rule_id}")
+        return None
+
+
+def _validate_document_required(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Validate DOCUMENT_REQUIRED rules.
+    Check if required documents are present for the submission.
+    """
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    
+    if not submission_id or not db:
+        return {
+            "status": "needs_review",
+            "severity": rule.severity,
+            "message": "Cannot validate document requirements: missing submission context",
+            "missing_fields": [],
+            "evidence": {}
+        }
+    
+    # Get required documents from rule
+    # For DOCUMENT_REQUIRED rules, we expect required_documents field or use required_fields as doc types
+    required_docs = rule.required_fields if rule.required_fields else []
+    
+    if not required_docs:
+        return None  # No documents specified
+    
+    # Query documents for this submission
+    from planproof.db import Document
+    session = db.get_session()
+    
+    try:
+        documents = session.query(Document).filter(Document.submission_id == submission_id).all()
+        present_doc_types = {doc.document_type for doc in documents if doc.document_type}
+        
+        # Check for missing documents
+        missing_docs = [doc_type for doc_type in required_docs if doc_type not in present_doc_types]
+        
+        if missing_docs:
+            # Generate evidence: list of present documents
+            evidence_snippets = []
+            for doc in documents[:5]:  # Show up to 5 present documents
+                evidence_snippets.append({
+                    "page": 1,
+                    "snippet": f"Present: {doc.document_type} - {doc.filename}",
+                    "document_type": doc.document_type
+                })
+            
+            return {
+                "status": "fail",
+                "severity": rule.severity,
+                "message": f"Missing required documents: {', '.join(missing_docs)}",
+                "missing_fields": missing_docs,
+                "evidence": {
+                    "evidence_snippets": evidence_snippets,
+                    "present_documents": list(present_doc_types),
+                    "missing_documents": missing_docs
+                }
+            }
+        else:
+            # All required documents present
+            evidence_snippets = []
+            for doc_type in required_docs:
+                matching_docs = [doc for doc in documents if doc.document_type == doc_type]
+                if matching_docs:
+                    evidence_snippets.append({
+                        "page": 1,
+                        "snippet": f"Found: {doc_type} - {matching_docs[0].filename}",
+                        "document_type": doc_type
+                    })
+            
+            return {
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "All required documents present",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": evidence_snippets,
+                    "present_documents": list(present_doc_types)
+                }
+            }
+    
+    finally:
+        session.close()
+
+
+def _validate_consistency(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Validate CONSISTENCY rules.
+    Check if key fields match across multiple documents in the same submission.
+    """
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    
+    if not submission_id or not db:
+        return {
+            "status": "needs_review",
+            "severity": rule.severity,
+            "message": "Cannot validate consistency: missing submission context",
+            "missing_fields": [],
+            "evidence": {}
+        }
+    
+    # Get consistency fields from rule (fields to check for consistency)
+    consistency_fields = rule.required_fields if rule.required_fields else []
+    
+    if not consistency_fields:
+        return None  # No fields specified
+    
+    # Query extracted fields for this submission
+    from planproof.db import ExtractedField, Document
+    session = db.get_session()
+    
+    try:
+        conflicts = []
+        evidence_snippets = []
+        
+        for field_key in consistency_fields:
+            # Get all extracted values for this field across documents
+            extracted_fields = session.query(ExtractedField).filter(
+                ExtractedField.submission_id == submission_id,
+                ExtractedField.field_name == field_key
+            ).all()
+            
+            if len(extracted_fields) <= 1:
+                continue  # No conflict possible with 0 or 1 value
+            
+            # Group by field_value to detect conflicts
+            value_groups = {}
+            for ef in extracted_fields:
+                value = ef.field_value
+                if value not in value_groups:
+                    value_groups[value] = []
+                value_groups[value].append(ef)
+            
+            # If more than one unique value, we have a conflict
+            if len(value_groups) > 1:
+                conflicts.append(field_key)
+                
+                # Build evidence from all conflicting sources
+                for value, efs in value_groups.items():
+                    for ef in efs[:2]:  # Max 2 per value
+                        # Get document info
+                        doc = session.query(Document).filter(Document.id == ef.document_id).first()
+                        doc_name = doc.filename if doc else f"document_{ef.document_id}"
+                        doc_type = doc.document_type if doc else "unknown"
+                        
+                        evidence_snippets.append({
+                            "page": 1,  # Page info not available in ExtractedField
+                            "snippet": f"{field_key}='{value}' in {doc_type} ({doc_name})",
+                            "field_key": field_key,
+                            "field_value": value,
+                            "document_id": ef.document_id,
+                            "document_type": doc_type
+                        })
+        
+        if conflicts:
+            return {
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": f"Conflicting values found for: {', '.join(conflicts)}",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": evidence_snippets,
+                    "conflicting_fields": conflicts
+                }
+            }
+        else:
+            # All fields consistent
+            return {
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "All checked fields are consistent across documents",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": [],
+                    "checked_fields": consistency_fields
+                }
+            }
+    
+    finally:
+        session.close()
+
+
+def _validate_modification(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Validate MODIFICATION rules.
+    Check parent reference and delta completeness for modification submissions.
+    """
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    
+    if not submission_id or not db:
+        return {
+            "status": "needs_review",
+            "severity": rule.severity,
+            "message": "Cannot validate modification: missing submission context",
+            "missing_fields": [],
+            "evidence": {}
+        }
+    
+    from planproof.db import Submission, ChangeSet
+    session = db.get_session()
+    
+    try:
+        # Get submission
+        submission = session.query(Submission).filter(Submission.id == submission_id).first()
+        
+        if not submission:
+            return {
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "Submission not found",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        # Check if this is a modification (V1+)
+        is_modification = submission.submission_version != "V0"
+        
+        if not is_modification:
+            # Not a modification, rule doesn't apply
+            return {
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Not a modification submission (V0)",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        # For modifications, check parent reference
+        if not submission.parent_submission_id:
+            return {
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "Missing parent reference: modification submissions must reference parent V0",
+                "missing_fields": ["parent_submission_id"],
+                "evidence": {
+                    "evidence_snippets": [{
+                        "page": 1,
+                        "snippet": f"Submission {submission.submission_version} has no parent_submission_id"
+                    }]
+                }
+            }
+        
+        # Check if ChangeSet exists
+        changeset = session.query(ChangeSet).filter(
+            ChangeSet.submission_id == submission_id
+        ).first()
+        
+        if not changeset:
+            return {
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "Missing delta computation: ChangeSet not found for modification",
+                "missing_fields": ["changeset"],
+                "evidence": {
+                    "evidence_snippets": [{
+                        "page": 1,
+                        "snippet": f"No ChangeSet found for submission {submission.submission_version}"
+                    }]
+                }
+            }
+        
+        # Check delta completeness (ChangeSet has ChangeItems)
+        from planproof.db import ChangeItem
+        change_items = session.query(ChangeItem).filter(
+            ChangeItem.change_set_id == changeset.id
+        ).all()
+        
+        if not change_items:
+            return {
+                "status": "needs_review",
+                "severity": "warning",
+                "message": "Delta computation incomplete: no changes detected",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": [{
+                        "page": 1,
+                        "snippet": f"ChangeSet {changeset.id} has no ChangeItems"
+                    }],
+                    "changeset_id": changeset.id
+                }
+            }
+        
+        # All checks passed
+        return {
+            "status": "pass",
+            "severity": rule.severity,
+            "message": f"Modification valid: {len(change_items)} changes detected, significance={changeset.significance_score:.2f}",
+            "missing_fields": [],
+            "evidence": {
+                "evidence_snippets": [{
+                    "page": 1,
+                    "snippet": f"ChangeSet {changeset.id}: {len(change_items)} changes, significance={changeset.significance_score:.2f}"
+                }],
+                "changeset_id": changeset.id,
+                "change_count": len(change_items),
+                "significance_score": changeset.significance_score
+            }
+        }
+    
+    finally:
+        session.close()
+
+
+def _validate_spatial(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Validate SPATIAL rules.
+    Stub - deferred post-MVP.
+    """
+    # Stub - deferred
+    return None
+
+
+def validate_modification_submission(
+    submission_id: int,
+    rules: List[Rule],
+    db: Optional[Database] = None
+) -> Dict[str, Any]:
+    """
+    Validate a modification submission with targeted revalidation.
+    Only re-runs rules impacted by changes in the ChangeSet.
+    
+    Args:
+        submission_id: V1+ submission ID
+        rules: List of all validation rules
+        db: Optional Database instance
+    
+    Returns:
+        Validation results with impacted_rules metadata
+    """
+    if db is None:
+        db = Database()
+    
+    from planproof.db import Submission, ChangeSet
+    from planproof.services.delta_service import get_impacted_rules
+    
+    session = db.get_session()
+    
+    try:
+        # Get submission
+        submission = session.query(Submission).filter(Submission.id == submission_id).first()
+        
+        if not submission:
+            return {"error": f"Submission {submission_id} not found"}
+        
+        if submission.submission_version == "V0":
+            return {"error": "Not a modification submission"}
+        
+        # Get ChangeSet
+        changeset = session.query(ChangeSet).filter(
+            ChangeSet.submission_id == submission_id
+        ).first()
+        
+        if not changeset:
+            return {"error": "ChangeSet not found for modification"}
+        
+        # Get impacted rules
+        impacted_rule_ids = get_impacted_rules(changeset.id, db)
+        
+        # Filter rules to only impacted ones
+        impacted_rules = [r for r in rules if r.rule_id in impacted_rule_ids]
+        
+        LOGGER.info(
+            f"Targeted revalidation: {len(impacted_rules)}/{len(rules)} rules impacted "
+            f"for submission {submission_id}"
+        )
+        
+        # Run validation on impacted rules only
+        # Note: This would need document-level extraction data
+        # For now, return metadata about what would be revalidated
+        
+        return {
+            "submission_id": submission_id,
+            "changeset_id": changeset.id,
+            "significance_score": changeset.significance_score,
+            "total_rules": len(rules),
+            "impacted_rules": len(impacted_rules),
+            "impacted_rule_ids": impacted_rule_ids,
+            "revalidation_needed": changeset.requires_validation,
+            "message": f"Targeted revalidation: {len(impacted_rules)} rules need re-evaluation"
+        }
+    
+    finally:
+        session.close()
 
 
 def validate_extraction(
@@ -484,6 +902,44 @@ def validate_extraction(
                     # Rule doesn't apply to this document type - skip it
                     continue
 
+            # Dispatch by category for non-FIELD_REQUIRED rules
+            # Only run category validators if we have proper context (submission_id and db)
+            if rule.rule_category and rule.rule_category.upper() != "FIELD_REQUIRED":
+                # Skip category validators if missing required context
+                if not submission_id or not db:
+                    continue  # Skip this rule - requires submission context
+                
+                category_context = {
+                    "extraction": extraction,
+                    "fields": fields,
+                    "evidence_index": evidence_index,
+                    "document_id": document_id,
+                    "submission_id": submission_id,
+                    "document_type": document_type,
+                    "db": db
+                }
+                category_finding = _dispatch_by_category(rule, category_context)
+                if category_finding:
+                    findings.append(category_finding)
+                    if category_finding.get("status") in ["fail", "needs_review"] and rule.severity == "error":
+                        needs_llm = True
+                    
+                    # Write to database if enabled
+                    if session and document_id:
+                        check = ValidationCheck(
+                            document_id=document_id,
+                            submission_id=submission_id,
+                            rule_id=rule.rule_id,
+                            rule_category=rule.rule_category,
+                            status=ValidationStatus(category_finding.get("status", "needs_review")),
+                            severity=rule.severity,
+                            message=category_finding.get("message", ""),
+                            evidence_summary=category_finding.get("evidence", {})
+                        )
+                        session.add(check)
+                continue  # Skip default field validation for category-specific rules
+
+            # Default FIELD_REQUIRED validation logic
             missing = []
             found_any = False
 

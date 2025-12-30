@@ -447,8 +447,24 @@ def get_run_results(run_id: int) -> Dict[str, Any]:
                 doc = session.query(Document).filter(Document.id == doc_id).first()
                 filename = doc.filename if doc else f"document_{doc_id}"
                 
+                # Get document path (from inputs dir)
+                document_path = str(inputs_dir / filename) if (inputs_dir / filename).exists() else None
+                
                 # Build validation findings
                 for finding in validation.get("findings", []):
+                    # Enhance evidence with document path
+                    evidence = finding.get("evidence", {})
+                    evidence_snippets = evidence.get("evidence_snippets", [])
+                    
+                    # Add document path to each evidence snippet
+                    enhanced_evidence = []
+                    for ev in evidence_snippets:
+                        enhanced_ev = ev.copy()
+                        enhanced_ev["document_id"] = doc_id
+                        enhanced_ev["document_path"] = document_path
+                        enhanced_ev["document_name"] = filename
+                        enhanced_evidence.append(enhanced_ev)
+                    
                     findings.append({
                         "rule_id": finding.get("rule_id", ""),
                         "rule_name": finding.get("rule_id", ""),  # Use rule_id as name for now
@@ -456,9 +472,11 @@ def get_run_results(run_id: int) -> Dict[str, Any]:
                         "severity": finding.get("severity", "unknown"),
                         "document_id": doc_id,
                         "document_name": filename,
+                        "document_path": document_path,
                         "message": finding.get("message", ""),
                         "missing_fields": finding.get("missing_fields", []),
-                        "evidence": finding.get("evidence", {})
+                        "evidence": evidence,
+                        "evidence_enhanced": enhanced_evidence
                     })
                 
                 # Build result summary

@@ -31,6 +31,7 @@ class Rule:
     applies_to: List[str] = None  # e.g. ["new_build", "amendment"]
     tags: List[str] = None
     required_fields_any: bool = False  # If True, any field satisfies (OR logic), else all required (AND logic)
+    rule_category: str = "FIELD_REQUIRED"  # DOCUMENT_REQUIRED, CONSISTENCY, MODIFICATION, SPATIAL, FIELD_REQUIRED
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -52,6 +53,7 @@ _SEV_LINE = re.compile(r"^\s*(?:Severity|Level)\s*[:\-]\s*(error|warning)\s*$", 
 _APPLIES_LINE = re.compile(r"^\s*(?:Applies to)\s*[:\-]\s*(.+)\s*$", re.I)
 _TAGS_LINE = re.compile(r"^\s*(?:Tags?)\s*[:\-]\s*(.+)\s*$", re.I)
 _KEYWORDS_LINE = re.compile(r"^\s*(?:Keywords?)\s*[:\-]\s*(.+)\s*$", re.I)
+_CATEGORY_LINE = re.compile(r"^\s*(?:Category|Rule category)\s*[:\-]\s*(DOCUMENT_REQUIRED|CONSISTENCY|MODIFICATION|SPATIAL|FIELD_REQUIRED)\s*$", re.I)
 
 
 def _split_csvish(s: str) -> List[str]:
@@ -91,9 +93,10 @@ def parse_validation_requirements(md_path: str | Path) -> List[Rule]:
     severity: str = "error"
     applies_to: List[str] = []
     tags: List[str] = []
+    rule_category: str = "FIELD_REQUIRED"
 
     def flush():
-        nonlocal cur_id, cur_title, desc_lines, req_fields, evidence_sources, evidence_keywords, severity, applies_to, tags
+        nonlocal cur_id, cur_title, desc_lines, req_fields, evidence_sources, evidence_keywords, severity, applies_to, tags, rule_category
         if not cur_id:
             return
         description = "\n".join([l.strip() for l in desc_lines if l.strip()]).strip()
@@ -112,6 +115,7 @@ def parse_validation_requirements(md_path: str | Path) -> List[Rule]:
                 severity=severity,
                 applies_to=applies_to,
                 tags=tags,
+                rule_category=rule_category,
             )
         )
 
@@ -125,6 +129,7 @@ def parse_validation_requirements(md_path: str | Path) -> List[Rule]:
         severity = "error"
         applies_to = []
         tags = []
+        rule_category = "FIELD_REQUIRED"
 
     for line in lines:
         hdr = _match_rule_header(line)
@@ -160,6 +165,10 @@ def parse_validation_requirements(md_path: str | Path) -> List[Rule]:
         m = _KEYWORDS_LINE.match(line)
         if m:
             evidence_keywords = _split_csvish(m.group(1))
+            continue
+        m = _CATEGORY_LINE.match(line)
+        if m:
+            rule_category = m.group(1).upper()
             continue
 
         desc_lines.append(line)

@@ -35,7 +35,7 @@ st.sidebar.markdown("---")
 # Navigation
 page = st.sidebar.radio(
     "Navigation",
-    ["Upload", "Status", "Results"],
+    ["Upload", "Status", "Results", "Case Overview", "Fields Viewer"],
     index=0 if st.session_state.stage == "upload" else (1 if st.session_state.stage == "status" else 2)
 )
 
@@ -49,4 +49,10 @@ elif page == "Status":
 elif page == "Results":
     from planproof.ui.pages import results
     results.render()
+elif page == "Case Overview":
+    from planproof.ui.pages import case_overview
+    case_overview.render()
+elif page == "Fields Viewer":
+    from planproof.ui.pages import fields
+    fields.render()
 
