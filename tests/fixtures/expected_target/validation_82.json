@@ -1,0 +1,69 @@
+{
+  "context": {
+    "document_id": 82,
+    "submission_id": 82
+  },
+  "findings": [
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "proposed_use",
+          "applicant_name",
+          "postcode"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "site_address"
+      ],
+      "rule_id": "R1",
+      "severity": "error",
+      "status": "pass"
+    },
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "proposed_use",
+          "applicant_name",
+          "postcode"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "proposed_use"
+      ],
+      "rule_id": "R2",
+      "severity": "error",
+      "status": "pass"
+    },
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "applicant_name",
+          "postcode",
+          "proposed_use",
+          "site_address"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "application_ref"
+      ],
+      "rule_id": "R3",
+      "severity": "error",
+      "status": "pass"
+    }
+  ],
+  "summary": {
+    "fail": 0,
+    "needs_llm": false,
+    "needs_review": 0,
+    "pass": 3,
+    "rule_count": 4
+  }
+}

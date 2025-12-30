@@ -1,0 +1,32 @@
+{
+  "context": {
+    "document_id": 83,
+    "submission_id": 83
+  },
+  "findings": [
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "postcode"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "site_address",
+        "postcode"
+      ],
+      "rule_id": "R1-SITE-NOTICE",
+      "severity": "warning",
+      "status": "pass"
+    }
+  ],
+  "summary": {
+    "fail": 0,
+    "needs_llm": false,
+    "needs_review": 0,
+    "pass": 1,
+    "rule_count": 4
+  }
+}

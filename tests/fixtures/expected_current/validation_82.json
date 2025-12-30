@@ -1,0 +1,97 @@
+{
+  "context": {
+    "document_id": 82,
+    "submission_id": 82
+  },
+  "findings": [
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "proposed_use",
+          "applicant_name",
+          "postcode"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "site_address"
+      ],
+      "rule_id": "R1",
+      "severity": "error",
+      "status": "pass"
+    },
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "proposed_use",
+          "applicant_name",
+          "postcode"
+        ]
+      },
+      "message": "All required fields present.",
+      "missing_fields": [],
+      "required_fields": [
+        "proposed_use"
+      ],
+      "rule_id": "R2",
+      "severity": "error",
+      "status": "pass"
+    },
+    {
+      "evidence": {
+        "available_evidence_keys": [
+          "site_address",
+          "proposed_use",
+          "applicant_name",
+          "postcode"
+        ],
+        "evidence_snippets": [
+          {
+            "evidence_key": "site_address",
+            "page": 1,
+            "snippet": "Site location"
+          },
+          {
+            "evidence_key": "proposed_use",
+            "page": 1,
+            "snippet": "I/We hereby apply for Prior Approval: Prior Approval"
+          },
+          {
+            "evidence_key": "applicant_name",
+            "page": 1,
+            "snippet": "Applicant Name: Daniel Green"
+          },
+          {
+            "evidence_key": "postcode",
+            "page": 1,
+            "snippet": "Postcode: B8 1BG"
+          }
+        ],
+        "expected_sources": [
+          "application_form"
+        ],
+        "keywords": []
+      },
+      "message": "Missing required fields: application_ref",
+      "missing_fields": [
+        "application_ref"
+      ],
+      "required_fields": [
+        "application_ref"
+      ],
+      "rule_id": "R3",
+      "severity": "error",
+      "status": "needs_review"
+    }
+  ],
+  "summary": {
+    "fail": 0,
+    "needs_llm": true,
+    "needs_review": 1,
+    "pass": 2,
+    "rule_count": 4
+  }
+}

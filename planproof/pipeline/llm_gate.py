@@ -2,13 +2,16 @@
 LLM Gate module: Use Azure OpenAI to resolve validation issues when deterministic rules fail.
 """
 
-from typing import Dict, Any, List, Optional
+from __future__ import annotations
+
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime
 
-from planproof.aoai import AzureOpenAIClient
-from planproof.db import Database, Document, ValidationResult, ValidationStatus
-from planproof.pipeline.extract import get_extraction_result
-from planproof.docintel import DocumentIntelligence
+if TYPE_CHECKING:
+    from planproof.aoai import AzureOpenAIClient
+    from planproof.db import Database
+    from planproof.docintel import DocumentIntelligence
+from planproof.config import get_settings
 
 
 def resolve_with_llm(
@@ -36,11 +39,17 @@ def resolve_with_llm(
     Returns:
         List of resolution results
     """
+    from planproof.aoai import AzureOpenAIClient
+    from planproof.db import Database, Document, ValidationResult, ValidationStatus
+    from planproof.pipeline.extract import get_extraction_result
+
     if aoai_client is None:
         aoai_client = AzureOpenAIClient()
     if db is None:
         db = Database()
     if docintel is None:
+        from planproof.docintel import DocumentIntelligence
+
         docintel = DocumentIntelligence()
 
     session = db.get_session()
@@ -156,56 +165,92 @@ def resolve_with_llm(
 
 def _build_document_context(
     extraction_result: Dict[str, Any],
-    docintel: DocumentIntelligence
+    docintel: DocumentIntelligence,
+    *,
+    max_chars: int = 6000,
+    max_blocks: int = 80
 ) -> str:
-    """Build a text context from extraction result for LLM."""
+    """Build a bounded text context from extraction result for LLM."""
+    settings = get_settings()
+    max_chars = settings.llm_context_max_chars
+    max_blocks = settings.llm_context_max_blocks
     text_parts = []
 
-    # Add text blocks (prioritize headings and important content)
-    for block in extraction_result.get("text_blocks", []):
+    text_blocks = extraction_result.get("text_blocks", [])
+    tables = extraction_result.get("tables", [])
+
+    def _block_priority(block: Dict[str, Any]) -> int:
+        role = block.get("role", "")
+        if role in ["title", "sectionHeading"]:
+            return 0
+        return 1
+
+    sorted_blocks = sorted(text_blocks, key=_block_priority)[:max_blocks]
+    for block in sorted_blocks:
         content = block.get("content", "")
-        if content:
-            role = block.get("role", "")
-            if role in ["title", "sectionHeading"]:
-                text_parts.append(f"## {content}")
-            else:
-                text_parts.append(content)
+        if not content:
+            continue
+        role = block.get("role", "")
+        if role in ["title", "sectionHeading"]:
+            text_parts.append(f"## {content}")
+        else:
+            text_parts.append(content)
+        if sum(len(part) for part in text_parts) >= max_chars:
+            break
 
-    # Add table summaries
-    for table in extraction_result.get("tables", []):
-        table_text = []
-        for cell in table.get("cells", []):
-            if cell.get("content"):
-                table_text.append(cell["content"])
-        if table_text:
-            text_parts.append(" | ".join(table_text))
+    if sum(len(part) for part in text_parts) < max_chars:
+        for table in tables[:10]:
+            table_text = []
+            for cell in table.get("cells", [])[:30]:
+                if cell.get("content"):
+                    table_text.append(cell["content"])
+            if table_text:
+                text_parts.append(" | ".join(table_text))
+            if sum(len(part) for part in text_parts) >= max_chars:
+                break
 
-    return "\n\n".join(text_parts)
+    return "\n\n".join(text_parts)[:max_chars]
 
 
 def _get_field_context(
     field_name: str,
     extraction_result: Dict[str, Any],
-    full_context: str
+    full_context: str,
+    *,
+    max_chars: int = 4000,
+    max_blocks: int = 30
 ) -> str:
-    """Get relevant context for a specific field."""
-    # For now, return full context. In production, you might:
-    # - Extract relevant sections based on field name
-    # - Use semantic search to find most relevant paragraphs
-    # - Include surrounding context from the document
-
-    # Add field-specific hints
+    """Get relevant context for a specific field with lightweight retrieval."""
+    settings = get_settings()
+    max_chars = settings.llm_field_context_max_chars
+    max_blocks = settings.llm_field_context_max_blocks
     field_hints = {
         "site_address": "Look for address information, postcodes, street names",
         "proposed_use": "Look for descriptions of proposed development, use classes",
         "application_ref": "Look for application reference numbers, planning references"
     }
 
+    keywords = []
+    if field_name:
+        keywords.append(field_name.replace("_", " "))
     hint = field_hints.get(field_name, "")
     if hint:
-        return f"{hint}\n\n{full_context}"
+        keywords.extend(hint.lower().split())
 
-    return full_context
+    def _score_block(block: Dict[str, Any]) -> int:
+        content = (block.get("content") or "").lower()
+        return sum(1 for kw in keywords if kw in content)
+
+    blocks = extraction_result.get("text_blocks", [])
+    ranked_blocks = sorted(blocks, key=_score_block, reverse=True)[:max_blocks]
+    selected = [b.get("content", "") for b in ranked_blocks if b.get("content")]
+    context = "\n\n".join(selected)
+    if not context:
+        context = full_context
+
+    if hint:
+        return f"{hint}\n\n{context[:max_chars]}"
+    return context[:max_chars]
 
 
 def _get_validation_rules_for_field(field_name: str) -> str:
@@ -349,6 +394,8 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
         Dictionary with triggered flag, request, response, gate logging info, and llm_call_count
     """
     if aoai_client is None:
+        from planproof.aoai import AzureOpenAIClient
+
         aoai_client = AzureOpenAIClient()
     
     # Get call count before the LLM call
@@ -387,4 +434,3 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
         "response": resp,
         "llm_call_count": llm_calls_made,
     }
-

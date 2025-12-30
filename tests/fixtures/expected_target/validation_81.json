@@ -1,0 +1,14 @@
+{
+  "context": {
+    "document_id": 81,
+    "submission_id": 81
+  },
+  "findings": [],
+  "summary": {
+    "fail": 0,
+    "needs_llm": false,
+    "needs_review": 0,
+    "pass": 0,
+    "rule_count": 4
+  }
+}

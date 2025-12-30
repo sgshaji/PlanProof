@@ -3,11 +3,11 @@ Azure Blob Storage helpers for PDF uploads and JSON artefact storage.
 """
 
 import os
+import time
+import logging
 from typing import Optional, List
 from pathlib import Path
 from datetime import datetime
-from azure.storage.blob import BlobServiceClient, BlobClient
-from azure.core.exceptions import AzureError
 
 from planproof.config import get_settings
 
@@ -17,12 +17,43 @@ class StorageClient:
 
     def __init__(self, connection_string: Optional[str] = None):
         """Initialize storage client."""
+        from azure.storage.blob import BlobServiceClient
+
         settings = get_settings()
+        self._settings = settings
         conn_str = connection_string or settings.azure_storage_connection_string
+        self._connection_string = conn_str
         self.client = BlobServiceClient.from_connection_string(conn_str)
         self.inbox_container = settings.azure_storage_container_inbox
         self.artefacts_container = settings.azure_storage_container_artefacts
         self.logs_container = settings.azure_storage_container_logs
+        self._account_key = self._extract_account_key(conn_str)
+        self._logger = logging.getLogger(__name__)
+
+    def _with_retry(self, operation_name: str, func, *args, **kwargs):
+        max_attempts = max(1, self._settings.azure_retry_max_attempts)
+        base_delay = max(0.1, self._settings.azure_retry_base_delay_s)
+        last_error = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return func(*args, **kwargs)
+            except Exception as exc:
+                last_error = exc
+                if attempt == max_attempts:
+                    break
+                delay = base_delay * (2 ** (attempt - 1))
+                self._logger.warning(
+                    "storage_retry",
+                    extra={
+                        "operation": operation_name,
+                        "attempt": attempt,
+                        "max_attempts": max_attempts,
+                        "delay_s": delay,
+                        "error": str(exc),
+                    },
+                )
+                time.sleep(delay)
+        raise last_error
 
     def upload_pdf(self, pdf_path: str, blob_name: Optional[str] = None) -> str:
         """
@@ -56,7 +87,7 @@ class StorageClient:
         )
 
         with open(pdf_path, "rb") as data:
-            blob_client.upload_blob(data, overwrite=True)
+            self._with_retry("upload_pdf", blob_client.upload_blob, data, overwrite=True)
 
         return self.get_blob_uri(self.inbox_container, blob_name)
 
@@ -76,7 +107,7 @@ class StorageClient:
             container=self.inbox_container,
             blob=blob_name
         )
-        blob_client.upload_blob(pdf_bytes, overwrite=True)
+        self._with_retry("upload_pdf_bytes", blob_client.upload_blob, pdf_bytes, overwrite=True)
         return self.get_blob_uri(self.inbox_container, blob_name)
 
     def write_artefact(self, artefact_data: dict, artefact_name: str, overwrite: bool = True) -> str:
@@ -109,7 +140,13 @@ class StorageClient:
 
         json_bytes = json_module.dumps(artefact_data, indent=2, ensure_ascii=False).encode("utf-8")
         content_settings = ContentSettings(content_type="application/json")
-        blob_client.upload_blob(json_bytes, overwrite=overwrite, content_settings=content_settings)
+        self._with_retry(
+            "write_artefact",
+            blob_client.upload_blob,
+            json_bytes,
+            overwrite=overwrite,
+            content_settings=content_settings,
+        )
 
         return self.get_blob_uri(self.artefacts_container, blob_name)
 
@@ -144,6 +181,41 @@ class StorageClient:
         blob_name = blob_name.lstrip("/")
         return f"azure://{account_name}/{container}/{blob_name}"
 
+    def get_blob_sas_url(
+        self,
+        container: str,
+        blob_name: str,
+        expiry_minutes: int = 30
+    ) -> str:
+        """
+        Generate a read-only SAS URL for a blob.
+
+        Args:
+            container: Container name
+            blob_name: Blob name
+            expiry_minutes: SAS token expiry in minutes (default: 30)
+
+        Returns:
+            A SAS URL for the blob
+        """
+        from datetime import timedelta
+        from azure.storage.blob import generate_blob_sas, BlobSasPermissions
+
+        if not self._account_key:
+            raise ValueError("Azure Storage account key not found in connection string.")
+
+        blob_name = blob_name.lstrip("/")
+        sas_token = generate_blob_sas(
+            account_name=self.client.account_name,
+            container_name=container,
+            blob_name=blob_name,
+            account_key=self._account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.utcnow() + timedelta(minutes=expiry_minutes)
+        )
+        url = self.client.get_blob_client(container=container, blob=blob_name).url
+        return f"{url}?{sas_token}"
+
     def download_blob(self, container: str, blob_name: str) -> bytes:
         """
         Download a blob as bytes.
@@ -156,7 +228,10 @@ class StorageClient:
             Blob content as bytes
         """
         blob_client = self.client.get_blob_client(container=container, blob=blob_name)
-        return blob_client.download_blob().readall()
+        return self._with_retry(
+            "download_blob",
+            lambda: blob_client.download_blob().readall()
+        )
 
     def blob_exists(self, container: str, blob_name: str) -> bool:
         """
@@ -169,12 +244,23 @@ class StorageClient:
         Returns:
             True if blob exists, False otherwise
         """
+        from azure.core.exceptions import AzureError
+
         blob_client = self.client.get_blob_client(container=container, blob=blob_name)
         try:
             blob_client.get_blob_properties()
             return True
         except AzureError:
             return False
+
+    @staticmethod
+    def _extract_account_key(connection_string: str) -> Optional[str]:
+        """Extract the account key from a storage connection string."""
+        parts = connection_string.split(";")
+        for part in parts:
+            if part.startswith("AccountKey="):
+                return part.split("=", 1)[1]
+        return None
 
     def write_json_blob(self, container: str, blob_path: str, obj: dict, overwrite: bool = False) -> str:
         """
@@ -204,7 +290,13 @@ class StorageClient:
         
         json_bytes = json_module.dumps(obj, indent=2, ensure_ascii=False).encode("utf-8")
         content_settings = ContentSettings(content_type="application/json")
-        blob_client.upload_blob(json_bytes, overwrite=overwrite, content_settings=content_settings)
+        self._with_retry(
+            "write_json_blob",
+            blob_client.upload_blob,
+            json_bytes,
+            overwrite=overwrite,
+            content_settings=content_settings,
+        )
         
         return self.get_blob_uri(container, blob_path)
 
@@ -224,4 +316,3 @@ class StorageClient:
         blob_path = blob_path.lstrip("/")
         blob_bytes = self.download_blob(container, blob_path)
         return json_module.loads(blob_bytes.decode("utf-8"))
-

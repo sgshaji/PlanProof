@@ -19,6 +19,10 @@ from planproof.pipeline.ingest import ingest_pdf
 from planproof.pipeline.extract import extract_from_pdf_bytes
 from planproof.pipeline.validate import load_rule_catalog, validate_extraction
 from planproof.pipeline.llm_gate import should_trigger_llm, resolve_with_llm_new
+from planproof.config import get_settings
+
+# Initialize settings at module level
+settings = get_settings()
 
 
 def _ensure_run_dirs(run_id: int) -> tuple:
@@ -46,6 +50,7 @@ def start_run(
     Returns:
         run_id: Integer run ID
     """
+    settings = get_settings()
     db = Database()
     
     # Get or create application first
@@ -156,8 +161,9 @@ def _process_run(
                     pdf_bytes,
                     ingested_with_context,
                     docintel=docintel,
+                    storage_client=storage_client,
                     db=db,
-                    write_to_tables=True
+                    write_to_tables=settings.enable_db_writes
                 )
                 
                 # Save extraction to local outputs
@@ -176,7 +182,7 @@ def _process_run(
                         "submission_id": ingested.get("submission_id")
                     },
                     db=db,
-                    write_to_tables=True
+                    write_to_tables=settings.enable_db_writes
                 )
                 
                 # Save validation to local outputs
@@ -189,7 +195,7 @@ def _process_run(
                 llm_notes = None
                 
                 try:
-                    if should_trigger_llm(
+                    if settings.enable_llm_gate and should_trigger_llm(
                         validation,
                         extraction,
                         resolved_fields=resolved_fields,
@@ -523,4 +529,3 @@ def get_run_results(run_id: int) -> Dict[str, Any]:
         return {"error": f"Error retrieving results: {str(e)}"}
     finally:
         session.close()
-

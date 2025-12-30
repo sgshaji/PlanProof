@@ -2,13 +2,17 @@
 Validate module: Apply deterministic validation rules to extracted fields.
 """
 
-from typing import Dict, Any, List, Optional, Tuple
+from __future__ import annotations
+
+from typing import Dict, Any, List, Optional, Tuple, TYPE_CHECKING
+import logging
 from datetime import datetime
 from pathlib import Path
 
-from planproof.db import Database, Document, ValidationResult, ValidationStatus, ValidationCheck
-from planproof.pipeline.extract import get_extraction_result
+if TYPE_CHECKING:
+    from planproof.db import Database, ValidationCheck, ValidationStatus
 
+LOGGER = logging.getLogger(__name__)
 
 def validate_document(
     document_id: int,
@@ -31,6 +35,9 @@ def validate_document(
         db = Database()
 
     # Get extraction result
+    from planproof.pipeline.extract import get_extraction_result
+    from planproof.db import ValidationResult
+
     extraction_result = get_extraction_result(document_id, db=db)
     if extraction_result is None:
         raise ValueError(f"No extraction result found for document {document_id}")
@@ -40,11 +47,14 @@ def validate_document(
         validation_rules = _get_default_validation_rules()
 
     # Extract text content for field matching
-    all_text = _extract_all_text(extraction_result)
+    text_index = _build_text_index(extraction_result)
+
+    from planproof.config import get_settings
 
     # Apply validation rules
-    validation_results = []
-    session = db.get_session()
+    validation_results: List[Dict[str, Any]] = []
+    validation_rows = []
+    session = db.get_session() if get_settings().enable_db_writes else None
 
     try:
         for field_name, rule in validation_rules.items():
@@ -52,33 +62,39 @@ def validate_document(
                 field_name=field_name,
                 rule=rule,
                 extraction_result=extraction_result,
-                all_text=all_text
+                text_index=text_index
             )
 
-            # Create validation result record
-            validation_result = ValidationResult(
-                document_id=document_id,
-                field_name=field_name,
-                status=result["status"],
-                confidence=result.get("confidence"),
-                extracted_value=result.get("extracted_value"),
-                expected_value=result.get("expected_value"),
-                rule_name=result.get("rule_name"),
-                error_message=result.get("error_message"),
-                evidence_page=result.get("evidence_page"),
-                evidence_location=result.get("evidence_location")
-            )
-            session.add(validation_result)
+            if session:
+                # Create validation result record
+                validation_result = ValidationResult(
+                    document_id=document_id,
+                    field_name=field_name,
+                    status=result["status"],
+                    confidence=result.get("confidence"),
+                    extracted_value=result.get("extracted_value"),
+                    expected_value=result.get("expected_value"),
+                    rule_name=result.get("rule_name"),
+                    error_message=result.get("error_message"),
+                    evidence_page=result.get("evidence_page"),
+                    evidence_location=result.get("evidence_location")
+                )
+                session.add(validation_result)
+                validation_rows.append(validation_result)
             validation_results.append(result)
 
-        session.commit()
+        if session:
+            session.commit()
 
         # Refresh to get IDs
-        for vr in validation_results:
-            session.refresh(vr)
+        if session:
+            for row, result in zip(validation_rows, validation_results, strict=False):
+                session.refresh(row)
+                result["id"] = row.id
 
     finally:
-        session.close()
+        if session:
+            session.close()
 
     return validation_results
 
@@ -105,7 +121,7 @@ def _validate_field(
     field_name: str,
     rule: Dict[str, Any],
     extraction_result: Dict[str, Any],
-    all_text: str
+    text_index: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Validate a single field against a rule.
@@ -119,6 +135,8 @@ def _validate_field(
     Returns:
         Validation result dictionary
     """
+    from planproof.db import ValidationStatus
+
     rule_type = rule.get("type", "presence")
     required = rule.get("required", False)
     pattern = rule.get("pattern")
@@ -126,7 +144,11 @@ def _validate_field(
     max_length = rule.get("max_length")
 
     # Try to extract field value (simple keyword matching for now)
-    extracted_value = _extract_field_value(field_name, all_text, extraction_result)
+    extracted_value = _extract_field_value(
+        field_name,
+        text_index,
+        extraction_result
+    )
 
     # Check if field is required and missing
     if required and not extracted_value:
@@ -194,9 +216,58 @@ def _validate_field(
     }
 
 
+def _normalize_label(label: str) -> str:
+    return " ".join(
+        label.strip()
+        .lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(":", "")
+        .split()
+    )
+
+
+def _build_text_index(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    label_value_index: Dict[str, str] = {}
+    blocks: List[Dict[str, str]] = []
+
+    for block in extraction_result.get("text_blocks", []):
+        content = block.get("content")
+        if not content:
+            continue
+        blocks.append(
+            {
+                "content": content,
+                "content_lower": content.lower()
+            }
+        )
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        for idx, line in enumerate(lines):
+            if ":" in line:
+                label, value = line.split(":", 1)
+                label = label.strip()
+                value = value.strip()
+                if label and value:
+                    label_value_index[_normalize_label(label)] = value
+                    continue
+
+            if line.endswith(":") and idx + 1 < len(lines):
+                label = line[:-1].strip()
+                value = lines[idx + 1].strip()
+                if label and value:
+                    label_value_index[_normalize_label(label)] = value
+
+    return {
+        "blocks": blocks,
+        "label_value_index": label_value_index,
+        "full_text": _extract_all_text(extraction_result)
+    }
+
+
 def _extract_field_value(
     field_name: str,
-    all_text: str,
+    text_index: Dict[str, Any],
     extraction_result: Dict[str, Any]
 ) -> Optional[str]:
     """
@@ -213,6 +284,42 @@ def _extract_field_value(
         field_name.replace("_", "-"),
         field_name
     ]
+
+    label_value_index = text_index.get("label_value_index", {})
+
+    for keyword in keywords:
+        normalized = _normalize_label(keyword)
+        if normalized in label_value_index:
+            return label_value_index[normalized]
+
+        for label, value in label_value_index.items():
+            if normalized in label:
+                return value
+
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        for block in text_index.get("blocks", []):
+            content_lower = block.get("content_lower", "")
+            if keyword_lower not in content_lower:
+                continue
+            lines = block.get("content", "").splitlines()
+            for idx, line in enumerate(lines):
+                line_lower = line.lower()
+                if keyword_lower not in line_lower:
+                    continue
+                if ":" in line:
+                    label, value = line.split(":", 1)
+                    if keyword_lower in label.lower():
+                        value = value.strip()
+                        if value:
+                            return value
+                stripped = line_lower.strip().rstrip(":")
+                if stripped == keyword_lower and idx + 1 < len(lines):
+                    value = lines[idx + 1].strip()
+                    if value:
+                        return value
+
+    all_text = text_index.get("full_text", "")
 
     for keyword in keywords:
         # Look for patterns like "Field Name: value" or "Field Name value"
@@ -350,6 +457,8 @@ def validate_extraction(
                         Note: JSON artefact is always created separately in main pipeline
     """
     context = context or {}
+    if write_to_tables and db:
+        from planproof.db import ValidationStatus, ValidationCheck
     fields: Dict[str, Any] = extraction.get("fields", {}) or {}
     evidence_index: Dict[str, Any] = extraction.get("evidence_index", {}) or {}
     
@@ -363,83 +472,87 @@ def validate_extraction(
     document_id = context.get("document_id")
     submission_id = context.get("submission_id")
 
-    for rule in rules:
-        # Skip rule if it doesn't apply to this document type
-        if rule.applies_to and len(rule.applies_to) > 0:
-            if document_type not in rule.applies_to:
-                # Rule doesn't apply to this document type - skip it
-                continue
-        missing = []
-        found_any = False
-        
-        # Check required fields
-        for f in rule.required_fields:
-            v = fields.get(f)
-            if v is None or (isinstance(v, str) and not v.strip()) or (isinstance(v, list) and len(v) == 0):
-                missing.append(f)
-            else:
-                found_any = True  # At least one field is present
-        
-        # For OR logic (required_fields_any=True): pass if ANY field is present
-        # For AND logic (required_fields_any=False): fail if ANY field is missing
-        if rule.required_fields_any:
-            # OR logic: if any field is found, rule passes
-            if found_any:
-                missing = []  # Clear missing - rule passes
-            # else: missing contains all fields (rule fails)
-        # else: AND logic - missing contains fields that are missing (rule fails if any missing)
+    session = None
+    if write_to_tables and db:
+        session = db.get_session()
 
-        if missing:
-            status = "needs_review"
-            if rule.severity == "error":
-                needs_llm = True
-            # Find evidence snippets for missing fields (page numbers + snippets)
-            evidence_snippets = []
-            evidence_ids = []
-            for ev_key, ev_data in evidence_index.items():
-                # Handle both field-specific evidence (list) and general text blocks (dict)
-                if isinstance(ev_data, list):
-                    # Field-specific evidence: list of dicts
-                    for ev_item in ev_data[:3]:  # Top 3 snippets
-                        page_num = ev_item.get("page")
-                        snippet = ev_item.get("snippet", "")
+    try:
+        for rule in rules:
+            # Skip rule if it doesn't apply to this document type
+            if rule.applies_to and len(rule.applies_to) > 0:
+                if document_type not in rule.applies_to:
+                    # Rule doesn't apply to this document type - skip it
+                    continue
+
+            missing = []
+            found_any = False
+
+            # Check required fields
+            for f in rule.required_fields:
+                v = fields.get(f)
+                if v is None or (isinstance(v, str) and not v.strip()) or (isinstance(v, list) and len(v) == 0):
+                    missing.append(f)
+                else:
+                    found_any = True  # At least one field is present
+
+            # For OR logic (required_fields_any=True): pass if ANY field is present
+            # For AND logic (required_fields_any=False): fail if ANY field is missing
+            if rule.required_fields_any:
+                # OR logic: if any field is found, rule passes
+                if found_any:
+                    missing = []  # Clear missing - rule passes
+                # else: missing contains all fields (rule fails)
+            # else: AND logic - missing contains fields that are missing (rule fails if any missing)
+
+            if missing:
+                status = "needs_review"
+                if rule.severity == "error":
+                    needs_llm = True
+                # Find evidence snippets for missing fields (page numbers + snippets)
+                evidence_snippets = []
+                evidence_ids = []
+                for ev_key, ev_data in evidence_index.items():
+                    # Handle both field-specific evidence (list) and general text blocks (dict)
+                    if isinstance(ev_data, list):
+                        # Field-specific evidence: list of dicts
+                        for ev_item in ev_data[:3]:  # Top 3 snippets
+                            page_num = ev_item.get("page")
+                            snippet = ev_item.get("snippet", "")
+                            if page_num and snippet:
+                                evidence_snippets.append({
+                                    "evidence_key": ev_key,
+                                    "page": page_num,
+                                    "snippet": snippet
+                                })
+                    elif isinstance(ev_data, dict):
+                        # General text block or table
+                        page_num = ev_data.get("page_number")
+                        snippet = ev_data.get("snippet", ev_data.get("content", ""))[:100]
                         if page_num and snippet:
                             evidence_snippets.append({
                                 "evidence_key": ev_key,
                                 "page": page_num,
                                 "snippet": snippet
                             })
-                elif isinstance(ev_data, dict):
-                    # General text block or table
-                    page_num = ev_data.get("page_number")
-                    snippet = ev_data.get("snippet", ev_data.get("content", ""))[:100]
-                    if page_num and snippet:
-                        evidence_snippets.append({
-                            "evidence_key": ev_key,
-                            "page": page_num,
-                            "snippet": snippet
-                        })
-            
-            finding = {
-                "rule_id": rule.rule_id,
-                "severity": rule.severity,
-                "status": status,
-                "message": f"Missing required fields: {', '.join(missing)}",
-                "required_fields": rule.required_fields,
-                "missing_fields": missing,
-                "evidence": {
-                    "expected_sources": rule.evidence.source_types,
-                    "keywords": rule.evidence.keywords,
-                    "available_evidence_keys": list(evidence_index.keys()),
-                    "evidence_snippets": evidence_snippets[:5]  # Top 5 snippets with page numbers
-                },
-            }
-            findings.append(finding)
-            
-            # Write to ValidationCheck table if enabled
-            if write_to_tables and db:
-                try:
-                    session = db.get_session()
+
+                finding = {
+                    "rule_id": rule.rule_id,
+                    "severity": rule.severity,
+                    "status": status,
+                    "message": f"Missing required fields: {', '.join(missing)}",
+                    "required_fields": rule.required_fields,
+                    "missing_fields": missing,
+                    "evidence": {
+                        "expected_sources": rule.evidence.source_types,
+                        "keywords": rule.evidence.keywords,
+                        "available_evidence_keys": list(evidence_index.keys()),
+                        "evidence_snippets": evidence_snippets[:5]  # Top 5 snippets with page numbers
+                    },
+                }
+                findings.append(finding)
+
+                # Write to ValidationCheck table if enabled
+                if session:
                     try:
                         from planproof.db import Evidence
                         # Get evidence IDs for this rule
@@ -450,7 +563,7 @@ def validate_extraction(
                             ).first()
                             if evidence:
                                 evidence_ids.append(evidence.id)
-                        
+
                         # Map status to ValidationStatus enum
                         if status == "pass":
                             check_status = ValidationStatus.PASS
@@ -458,7 +571,7 @@ def validate_extraction(
                             check_status = ValidationStatus.NEEDS_REVIEW
                         else:
                             check_status = ValidationStatus.FAIL
-                        
+
                         validation_check = ValidationCheck(
                             submission_id=submission_id,
                             document_id=document_id,
@@ -468,28 +581,25 @@ def validate_extraction(
                             evidence_ids=evidence_ids if evidence_ids else None
                         )
                         session.add(validation_check)
-                        session.commit()
-                    finally:
-                        session.close()
-                except Exception as e:
-                    # ValidationCheck might already exist or error, continue
-                    pass
-        else:
-            finding = {
-                "rule_id": rule.rule_id,
-                "severity": rule.severity,
-                "status": "pass",
-                "message": "All required fields present.",
-                "required_fields": rule.required_fields,
-                "missing_fields": [],
-                "evidence": {"available_evidence_keys": list(evidence_index.keys())},
-            }
-            findings.append(finding)
-            
-            # Write to ValidationCheck table if enabled
-            if write_to_tables and db:
-                try:
-                    session = db.get_session()
+                    except Exception as exc:
+                        LOGGER.warning(
+                            "validation_check_write_failed",
+                            extra={"document_id": document_id, "rule_id": rule.rule_id, "error": str(exc)},
+                        )
+            else:
+                finding = {
+                    "rule_id": rule.rule_id,
+                    "severity": rule.severity,
+                    "status": "pass",
+                    "message": "All required fields present.",
+                    "required_fields": rule.required_fields,
+                    "missing_fields": [],
+                    "evidence": {"available_evidence_keys": list(evidence_index.keys())},
+                }
+                findings.append(finding)
+
+                # Write to ValidationCheck table if enabled
+                if session:
                     try:
                         validation_check = ValidationCheck(
                             submission_id=submission_id,
@@ -499,12 +609,23 @@ def validate_extraction(
                             explanation="All required fields present."
                         )
                         session.add(validation_check)
-                        session.commit()
-                    finally:
-                        session.close()
-                except Exception as e:
-                    # ValidationCheck might already exist or error, continue
-                    pass
+                    except Exception as exc:
+                        LOGGER.warning(
+                            "validation_check_write_failed",
+                            extra={"document_id": document_id, "rule_id": rule.rule_id, "error": str(exc)},
+                        )
+
+        if session:
+            session.commit()
+    finally:
+        if session:
+            session.close()
+
+    if session:
+        try:
+            session.commit()
+        finally:
+            session.close()
 
     summary = {
         "rule_count": len(rules),
@@ -515,4 +636,3 @@ def validate_extraction(
     }
 
     return {"summary": summary, "findings": findings, "context": context}
-

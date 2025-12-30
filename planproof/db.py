@@ -19,6 +19,12 @@ from planproof.config import get_settings
 Base = declarative_base()
 
 
+def utcnow() -> datetime:
+    """Return a timezone-aware UTC timestamp."""
+    return datetime.now(timezone.utc)
+
+
+
 class ValidationStatus(str, Enum):
     """Validation result status."""
     PASS = "pass"
@@ -35,9 +41,9 @@ class Application(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     application_ref = Column(String(100), unique=True, nullable=False, index=True)
     applicant_name = Column(String(255))
-    application_date = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    application_date = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     submissions = relationship("Submission", back_populates="planning_case", cascade="all, delete-orphan")
@@ -54,8 +60,8 @@ class Submission(Base):
     parent_submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True, index=True)  # For modifications
     status = Column(String(20), nullable=False, default="pending")  # pending, processing, completed, failed
     submission_metadata = Column(JSON, nullable=True)  # resolved_fields, llm_calls_per_submission, etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     planning_case = relationship("Application", back_populates="submissions")
@@ -76,8 +82,8 @@ class Document(Base):
     blob_uri = Column(String(500), nullable=False, unique=True, index=True)
     filename = Column(String(255), nullable=False)
     content_hash = Column(String(64), nullable=True, unique=True, index=True)  # SHA256 hash for deduplication
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    processed_at = Column(DateTime, nullable=True)
+    uploaded_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
     page_count = Column(Integer, nullable=True)
     docintel_model = Column(String(50), nullable=True)  # e.g., "prebuilt-layout"
     document_type = Column(String(50), nullable=True)  # e.g., "application_form", "site_plan"
@@ -100,7 +106,7 @@ class Page(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
     page_number = Column(Integer, nullable=False)
     page_metadata = Column(JSON, nullable=True)  # OCR confidence, dimensions, etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     document = relationship("Document", back_populates="pages")
@@ -121,7 +127,7 @@ class Evidence(Base):
     snippet = Column(Text, nullable=True)
     content = Column(Text, nullable=True)  # Full content if available
     confidence = Column(Float, nullable=True)  # 0.0 to 1.0
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     document = relationship("Document", back_populates="evidence")
@@ -142,8 +148,8 @@ class ExtractedField(Base):
     extractor = Column(String(50), nullable=True)  # "regex", "heuristic", "llm", etc.
     evidence_id = Column(Integer, ForeignKey("evidence.id"), nullable=True, index=True)
     conflict_flag = Column(String(20), nullable=True)  # "none", "detected", "resolved"
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     submission = relationship("Submission", back_populates="extracted_fields")
@@ -159,7 +165,7 @@ class GeometryFeature(Base):
     feature_type = Column(String(50), nullable=False)  # "site_boundary", "proposed_extension", "proposed_balcony"
     geometry = Column(Geometry("GEOMETRY"), nullable=True)  # PostGIS geometry
     geometry_json = Column(JSON, nullable=True)  # Fallback JSON representation
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     submission = relationship("Submission")
@@ -175,7 +181,7 @@ class SpatialMetric(Base):
     metric_name = Column(String(100), nullable=False)  # "min_distance_to_boundary", "area", "projection_depth"
     metric_value = Column(Float, nullable=False)
     metric_unit = Column(String(50), nullable=False)  # "m", "sqm", etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     geometry_feature = relationship("GeometryFeature", back_populates="spatial_metrics")
@@ -190,7 +196,7 @@ class ChangeSet(Base):
     parent_submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=False, index=True)  # V0 submission
     significance_score = Column(Float, nullable=True)  # 0.0 to 1.0
     requires_validation = Column(String(20), nullable=False, default="yes")  # "yes", "no", "partial"
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     submission = relationship("Submission", foreign_keys=[submission_id], back_populates="change_sets")
@@ -210,7 +216,7 @@ class ChangeItem(Base):
     new_value = Column(Text, nullable=True)
     significance = Column(String(20), nullable=True)  # "low", "medium", "high"
     impacted_rule_ids = Column(JSON, nullable=True)  # List of rule IDs that need revalidation
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     change_set = relationship("ChangeSet", back_populates="change_items")
@@ -228,8 +234,8 @@ class Rule(Base):
     severity = Column(String(20), nullable=False)  # "error", "warning"
     rule_config = Column(JSON, nullable=True)  # Additional rule configuration
     is_active = Column(String(10), nullable=False, default="yes")  # "yes", "no"
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     validation_checks = relationship("ValidationCheck", back_populates="rule", cascade="all, delete-orphan")
@@ -247,8 +253,8 @@ class ValidationCheck(Base):
     status = Column(SQLEnum(ValidationStatus), nullable=False, default=ValidationStatus.PENDING)
     explanation = Column(Text, nullable=True)
     evidence_ids = Column(JSON, nullable=True)  # List of evidence IDs
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     submission = relationship("Submission", back_populates="validation_checks")
@@ -264,7 +270,7 @@ class Artefact(Base):
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
     artefact_type = Column(String(50), nullable=False)  # e.g., "extracted_layout", "structured_data"
     blob_uri = Column(String(500), nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     artefact_metadata = Column(JSON, nullable=True)  # Additional metadata about the artefact (renamed from metadata to avoid SQLAlchemy conflict)
 
     # Relationships
@@ -287,8 +293,8 @@ class ValidationResult(Base):
     evidence_page = Column(Integer, nullable=True)  # Page number where evidence was found
     evidence_location = Column(Text, nullable=True)  # JSON pointer or coordinate reference
     llm_resolution = Column(Text, nullable=True)  # LLM reasoning if used
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     # Relationships
     document = relationship("Document", back_populates="validation_results")
@@ -302,9 +308,9 @@ class Run(Base):
     run_type = Column(String(50), nullable=False)  # e.g., "ingest", "extract", "validate", "llm_gate"
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True, index=True)
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
-    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    completed_at = Column(DateTime, nullable=True)
-    status = Column(String(20), nullable=False, default="running")  # running, completed, failed
+    started_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(50), nullable=False, default="running")  # running, completed, failed, completed_with_errors
     error_message = Column(Text, nullable=True)
     run_metadata = Column(JSON, nullable=True)  # Additional run context (renamed from metadata to avoid SQLAlchemy conflict)
 
@@ -656,6 +662,25 @@ class Database:
         finally:
             session.close()
 
+    def create_pages_bulk(
+        self,
+        pages: List[Page],
+        session: Optional[Session] = None
+    ) -> List[Page]:
+        """Create multiple page records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(pages)
+            session.commit()
+            for page in pages:
+                session.refresh(page)
+            return pages
+        finally:
+            if owns_session:
+                session.close()
+
     def create_evidence(
         self,
         document_id: int,
@@ -689,6 +714,25 @@ class Database:
         finally:
             session.close()
 
+    def create_evidence_bulk(
+        self,
+        evidence_items: List[Evidence],
+        session: Optional[Session] = None
+    ) -> List[Evidence]:
+        """Create multiple evidence records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(evidence_items)
+            session.commit()
+            for evidence in evidence_items:
+                session.refresh(evidence)
+            return evidence_items
+        finally:
+            if owns_session:
+                session.close()
+
     def create_extracted_field(
         self,
         submission_id: int,
@@ -717,6 +761,25 @@ class Database:
             return field
         finally:
             session.close()
+
+    def create_extracted_fields_bulk(
+        self,
+        fields: List[ExtractedField],
+        session: Optional[Session] = None
+    ) -> List[ExtractedField]:
+        """Create multiple extracted field records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(fields)
+            session.commit()
+            for field in fields:
+                session.refresh(field)
+            return fields
+        finally:
+            if owns_session:
+                session.close()
 
     def get_extracted_fields_for_submission(
         self,
@@ -763,4 +826,3 @@ class Database:
             return result
         finally:
             session.close()
-

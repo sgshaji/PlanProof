@@ -1,0 +1,66 @@
+{
+  "evidence_index": {
+    "postcode": [
+      {
+        "block_id": "p1b1",
+        "confidence": 0.5,
+        "page": 1,
+        "snippet": "Demolition of Unit M, Dorset Road, Saltley Business Park, B8 1BG",
+        "source_doc_type": "site_notice"
+      }
+    ],
+    "site_address": [
+      {
+        "block_id": "p1b1",
+        "confidence": 0.85,
+        "page": 1,
+        "snippet": "Demolition of Unit M, Dorset Road, Saltley Business Park, B8 1BG",
+        "source_doc_type": "site_notice"
+      }
+    ]
+  },
+  "fields": {
+    "document_type": "site_notice",
+    "postcode": "B8 1BG",
+    "postcode_confidence": 0.5,
+    "site_address": "Unit M, Dorset Road, Saltley Business Park, B8 1BG",
+    "site_address_confidence": 0.85
+  },
+  "metadata": {
+    "page_count": 1
+  },
+  "page_anchors": {},
+  "tables": [],
+  "text_blocks": [
+    {
+      "content": "Statement of Display of a Site Notice",
+      "index": 0,
+      "page_number": 1
+    },
+    {
+      "content": "Demolition of Unit M, Dorset Road, Saltley Business Park, B8 1BG",
+      "index": 1,
+      "page_number": 1
+    },
+    {
+      "content": "Site Notice",
+      "index": 2,
+      "page_number": 1
+    },
+    {
+      "content": "planning.registration@birmingham.gov.uk",
+      "index": 3,
+      "page_number": 1
+    },
+    {
+      "content": "0121 464 3669",
+      "index": 4,
+      "page_number": 1
+    },
+    {
+      "content": "Contact: Birmingham City Council",
+      "index": 5,
+      "page_number": 1
+    }
+  ]
+}
