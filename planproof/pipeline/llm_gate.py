@@ -434,3 +434,227 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
         "response": resp,
         "llm_call_count": llm_calls_made,
     }
+
+
+def resolve_low_confidence_extractions(
+    extraction: Dict[str, Any],
+    min_confidence: float = 0.7,
+    aoai_client: Optional[AzureOpenAIClient] = None,
+    db: Optional[Database] = None
+) -> Dict[str, Any]:
+    """
+    Use LLM to verify or improve low-confidence field extractions.
+    
+    Args:
+        extraction: Extraction result with fields and confidence scores
+        min_confidence: Minimum acceptable confidence threshold (default: 0.7)
+        aoai_client: Optional AzureOpenAIClient instance
+        db: Optional Database instance
+        
+    Returns:
+        Dictionary with improved fields and updated confidence scores
+    """
+    if aoai_client is None:
+        from planproof.aoai import AzureOpenAIClient
+        aoai_client = AzureOpenAIClient()
+    
+    fields = extraction.get("fields", {})
+    evidence_index = extraction.get("evidence_index", {})
+    
+    # Find low-confidence fields
+    low_confidence_fields = {}
+    for field_key, evidence_list in evidence_index.items():
+        if isinstance(evidence_list, list):
+            for evidence in evidence_list:
+                confidence = evidence.get("confidence", 1.0)
+                if confidence < min_confidence:
+                    field_value = fields.get(field_key)
+                    if field_value:
+                        low_confidence_fields[field_key] = {
+                            "value": field_value,
+                            "confidence": confidence,
+                            "evidence": evidence
+                        }
+                        break
+    
+    if not low_confidence_fields:
+        return {
+            "improved_fields": {},
+            "unchanged_fields": list(fields.keys()),
+            "llm_triggered": False
+        }
+    
+    # Build LLM prompt for verification
+    prompt = {
+        "task": "Verify and improve low-confidence field extractions. Confirm if values are correct or suggest better values.",
+        "low_confidence_fields": {
+            k: {"value": v["value"], "confidence": v["confidence"]}
+            for k, v in low_confidence_fields.items()
+        },
+        "document_context": _build_document_context(extraction, None, max_chars=4000, max_blocks=50),
+        "return_schema": {
+            "verified_fields": {
+                "field_name": "string",
+                "original_value": "string",
+                "improved_value": "string or null if no improvement",
+                "confidence": "float 0-1",
+                "reasoning": "string"
+            }
+        }
+    }
+    
+    response = aoai_client.chat_json(prompt)
+    
+    improved_fields = {}
+    for field_data in response.get("verified_fields", []):
+        field_name = field_data.get("field_name")
+        improved_value = field_data.get("improved_value")
+        new_confidence = field_data.get("confidence", 0.8)
+        
+        if improved_value and improved_value != field_data.get("original_value"):
+            improved_fields[field_name] = {
+                "old_value": field_data.get("original_value"),
+                "new_value": improved_value,
+                "confidence": new_confidence,
+                "reasoning": field_data.get("reasoning", "")
+            }
+            
+            # Update fields in extraction
+            fields[field_name] = improved_value
+            
+            # Update evidence index with new confidence
+            if field_name in evidence_index and isinstance(evidence_index[field_name], list):
+                for evidence in evidence_index[field_name]:
+                    evidence["confidence"] = new_confidence
+    
+    return {
+        "improved_fields": improved_fields,
+        "unchanged_fields": [k for k in low_confidence_fields.keys() if k not in improved_fields],
+        "llm_triggered": True,
+        "total_checked": len(low_confidence_fields),
+        "total_improved": len(improved_fields)
+    }
+
+
+def resolve_field_conflicts(
+    document_id: int,
+    submission_id: Optional[int] = None,
+    aoai_client: Optional[AzureOpenAIClient] = None,
+    db: Optional[Database] = None
+) -> Dict[str, Any]:
+    """
+    Use LLM to resolve conflicting field values from multiple documents.
+    
+    Args:
+        document_id: Primary document ID
+        submission_id: Optional submission ID to check all documents
+        aoai_client: Optional AzureOpenAIClient instance
+        db: Optional Database instance
+        
+    Returns:
+        Dictionary with resolved conflicts
+    """
+    if aoai_client is None:
+        from planproof.aoai import AzureOpenAIClient
+        aoai_client = AzureOpenAIClient()
+    
+    if db is None:
+        from planproof.db import Database
+        db = Database()
+    
+    from planproof.db import ExtractedField, Document
+    
+    session = db.get_session()
+    try:
+        # Get all extracted fields for submission (if provided) or just this document
+        if submission_id:
+            extracted_fields = session.query(ExtractedField).filter(
+                ExtractedField.submission_id == submission_id
+            ).all()
+        else:
+            extracted_fields = session.query(ExtractedField).filter(
+                ExtractedField.document_id == document_id
+            ).all()
+        
+        # Group by field name to find conflicts
+        field_groups = {}
+        for ef in extracted_fields:
+            if ef.field_name not in field_groups:
+                field_groups[ef.field_name] = []
+            field_groups[ef.field_name].append(ef)
+        
+        # Find conflicts (multiple different values for same field)
+        conflicts = {}
+        for field_name, field_list in field_groups.items():
+            unique_values = {}
+            for ef in field_list:
+                value = ef.field_value
+                if value not in unique_values:
+                    unique_values[value] = []
+                unique_values[value].append(ef)
+            
+            if len(unique_values) > 1:
+                # Get document names for context
+                doc_context = []
+                for value, efs in unique_values.items():
+                    for ef in efs:
+                        doc = session.query(Document).filter(Document.id == ef.document_id).first()
+                        doc_context.append({
+                            "value": value,
+                            "document": doc.filename if doc else f"doc_{ef.document_id}",
+                            "document_type": doc.document_type if doc else "unknown",
+                            "confidence": ef.confidence
+                        })
+                
+                conflicts[field_name] = {
+                    "values": list(unique_values.keys()),
+                    "context": doc_context
+                }
+        
+        if not conflicts:
+            return {
+                "conflicts_found": 0,
+                "resolved_conflicts": {},
+                "llm_triggered": False
+            }
+        
+        # Build LLM prompt for conflict resolution
+        prompt = {
+            "task": "Resolve conflicting field values from multiple documents. Select the most reliable value or suggest a merged value.",
+            "conflicts": conflicts,
+            "return_schema": {
+                "resolutions": [
+                    {
+                        "field_name": "string",
+                        "selected_value": "string",
+                        "confidence": "float 0-1",
+                        "reasoning": "string explanation of why this value was selected"
+                    }
+                ]
+            }
+        }
+        
+        response = aoai_client.chat_json(prompt)
+        
+        resolved_conflicts = {}
+        for resolution in response.get("resolutions", []):
+            field_name = resolution.get("field_name")
+            selected_value = resolution.get("selected_value")
+            confidence = resolution.get("confidence", 0.8)
+            reasoning = resolution.get("reasoning", "")
+            
+            resolved_conflicts[field_name] = {
+                "selected_value": selected_value,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "original_values": conflicts[field_name]["values"]
+            }
+        
+        return {
+            "conflicts_found": len(conflicts),
+            "resolved_conflicts": resolved_conflicts,
+            "llm_triggered": True
+        }
+    
+    finally:
+        session.close()

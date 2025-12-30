@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS
+  postgres:
+    image: postgis/postgis:13-3.1
+    container_name: planproof-db
+    environment:
+      POSTGRES_DB: planproof
+      POSTGRES_USER: planproof
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-planproof_dev_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U planproof -d planproof"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - planproof-network
+    restart: unless-stopped
+
+  # PlanProof Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: planproof-app
+    environment:
+      # Database
+      DATABASE_URL: postgresql://planproof:${DB_PASSWORD:-planproof_dev_password}@postgres:5432/planproof
+      
+      # Azure Services
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING}
+      AZURE_STORAGE_CONTAINER_NAME: ${AZURE_STORAGE_CONTAINER_NAME:-planproof-documents}
+      AZURE_DOCINTEL_ENDPOINT: ${AZURE_DOCINTEL_ENDPOINT}
+      AZURE_DOCINTEL_KEY: ${AZURE_DOCINTEL_KEY}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-02-15-preview}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-4o-mini}
+      
+      # Application Settings
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.6}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      
+    ports:
+      - "8501:8501"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./runs:/app/runs
+      - ./artefacts:/app/artefacts
+    networks:
+      - planproof-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  planproof-network:
+    driver: bridge

@@ -90,6 +90,31 @@ DOC_TYPE_HINTS = {
     "drawing": [r"existing", r"proposed", r"section", r"detail"],
     "design_statement": [r"design and access statement", r"design\s*&\s*access"],
     "heritage": [r"heritage statement", r"listed building", r"conservation area"],
+    "heritage_statement": [
+        r"heritage statement",
+        r"heritage impact assessment",
+        r"heritage appraisal",
+        r"listed building consent"
+    ],
+    "tree_survey": [
+        r"tree survey",
+        r"arboricultural report",
+        r"arboricultural method statement",
+        r"tree constraints plan",
+        r"TPO"
+    ],
+    "flood_risk_assessment": [
+        r"flood risk assessment",
+        r"FRA",
+        r"flood zone",
+        r"drainage strategy"
+    ],
+    "bng_metric_doc": [
+        r"biodiversity net gain",
+        r"BNG metric",
+        r"biodiversity metric",
+        r"ecological assessment"
+    ],
 }
 
 
