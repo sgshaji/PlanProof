@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "source": "validation_requirements.md",
-  "rule_count": 9,
+  "rule_count": 15,
   "rules": [
     {
       "rule_id": "R1",
@@ -186,6 +186,121 @@
       "applies_to": [],
       "tags": ["modification_check"],
       "rule_category": "MODIFICATION"
+    },
+    {
+      "rule_id": "R4",
+      "title": "Certificate Validation",
+      "description": "Application must include a valid ownership certificate (A, B, C, or D).",
+      "required_fields": [
+        "certificate_type"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["certificate", "ownership", "sole owner", "notice"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": ["application_form"],
+      "tags": ["certificate"],
+      "rule_category": "FIELD_REQUIRED"
+    },
+    {
+      "rule_id": "R5",
+      "title": "Fee Payment",
+      "description": "Application must include fee payment information unless exempt.",
+      "required_fields": [
+        "fee_amount"
+      ],
+      "required_fields_any": true,
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["fee", "payment", "exempt"],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": ["application_form"],
+      "tags": ["fee"],
+      "rule_category": "FIELD_REQUIRED"
+    },
+    {
+      "rule_id": "R-DOC-003",
+      "title": "Design & Access Statement Required",
+      "description": "Major applications must include a Design & Access Statement.",
+      "required_fields": [
+        "design_statement"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": [],
+      "tags": ["document_check", "major_application"],
+      "rule_category": "DOCUMENT_REQUIRED"
+    },
+    {
+      "rule_id": "R-DOC-004",
+      "title": "Elevations Required",
+      "description": "Applications with building changes must include elevation drawings.",
+      "required_fields": [
+        "elevation"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["document_check", "building_changes"],
+      "rule_category": "DOCUMENT_REQUIRED"
+    },
+    {
+      "rule_id": "R-DOC-005",
+      "title": "Floor Plans Required",
+      "description": "Applications with internal changes must include floor plans (existing and proposed).",
+      "required_fields": [
+        "floor_plan"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["document_check", "internal_changes"],
+      "rule_category": "DOCUMENT_REQUIRED"
+    },
+    {
+      "rule_id": "R-CONS-003",
+      "title": "Application Reference Consistency",
+      "description": "Application reference must be consistent across all documents where it appears.",
+      "required_fields": [
+        "application_ref"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["application", "reference", "ref"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["consistency_check"],
+      "rule_category": "CONSISTENCY"
     }
   ]
 }

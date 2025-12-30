@@ -37,9 +37,9 @@ DOC_TYPE_HINTS = {
         r"application form", 
         r"planning application", 
         r"town and country planning",
-        r"planning portal reference",  # Doc 82: "Planning Portal Reference:"
-        r"application to determine if prior approval",  # Prior Approval forms
-        r"i/we hereby apply for prior approval",  # Prior Approval declaration
+        r"planning portal reference",
+        r"application to determine if prior approval",
+        r"i/we hereby apply for prior approval",
         r"prior approval"
     ],
     "site_notice": [
@@ -48,15 +48,46 @@ DOC_TYPE_HINTS = {
         r"site notice",
         r"notice of application"
     ],
+    "location_plan": [
+        r"location plan",
+        r"site location"
+    ],
     "site_plan": [
         r"location\s*&\s*block\s*plan", 
-        r"location plan", 
         r"block plan", 
+        r"site plan",
         r"\b1:1250\b", 
         r"\b1:500\b", 
         r"\b1:2500\b"
     ],
-    "drawing": [r"existing", r"proposed", r"elevation", r"floor plan", r"section"],
+    "floor_plan_existing": [
+        r"existing\s+floor\s+plan",
+        r"floor\s+plan.*existing"
+    ],
+    "floor_plan_proposed": [
+        r"proposed\s+floor\s+plan",
+        r"floor\s+plan.*proposed"
+    ],
+    "floor_plan": [
+        r"floor plan",
+        r"ground floor",
+        r"first floor"
+    ],
+    "elevation_existing": [
+        r"existing\s+elevation",
+        r"elevation.*existing"
+    ],
+    "elevation_proposed": [
+        r"proposed\s+elevation",
+        r"elevation.*proposed"
+    ],
+    "elevation": [
+        r"elevation",
+        r"front elevation",
+        r"rear elevation",
+        r"side elevation"
+    ],
+    "drawing": [r"existing", r"proposed", r"section", r"detail"],
     "design_statement": [r"design and access statement", r"design\s*&\s*access"],
     "heritage": [r"heritage statement", r"listed building", r"conservation area"],
 }
@@ -343,7 +374,12 @@ def classify_document(text_blocks: List[Dict[str, Any]]) -> str:
     
     # Priority order: check more specific types first
     # application_form and site_notice should be checked before generic types
-    priority_order = ["application_form", "site_notice", "site_plan", "design_statement", "heritage", "drawing"]
+    priority_order = [
+        "application_form", "site_notice", "location_plan", "site_plan",
+        "floor_plan_existing", "floor_plan_proposed", "floor_plan",
+        "elevation_existing", "elevation_proposed", "elevation",
+        "design_statement", "heritage", "drawing"
+    ]
     
     best = ("unknown", 0)
     for dtype in priority_order:

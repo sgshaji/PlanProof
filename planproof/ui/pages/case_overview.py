@@ -220,16 +220,51 @@ def render():
             
             with col_btn1:
                 if st.button(f"📋 View Validation Results", key=f"results_{sub['submission_id']}"):
-                    # Find run_id for this submission (would need to query runs table)
-                    st.info("Validation results view - integrate with results page")
+                    # Navigate to results page (would need run_id from database)
+                    from planproof.db import Run
+                    db_temp = Database()
+                    session_temp = db_temp.get_session()
+                    try:
+                        # Find most recent run for this submission
+                        run = session_temp.query(Run).filter(
+                            Run.application_id == overview["application_id"]
+                        ).order_by(Run.started_at.desc()).first()
+                        
+                        if run:
+                            st.session_state.run_id = run.id
+                            st.session_state.stage = "results"
+                            st.info(f"Navigating to results for Run ID: {run.id}")
+                            st.rerun()
+                        else:
+                            st.warning("No validation run found for this submission")
+                    finally:
+                        session_temp.close()
             
             with col_btn2:
                 if st.button(f"📄 View Documents", key=f"docs_{sub['submission_id']}"):
-                    st.info("Document list view coming soon...")
+                    # Show document list for this submission
+                    from planproof.db import Document
+                    db_temp = Database()
+                    session_temp = db_temp.get_session()
+                    try:
+                        docs = session_temp.query(Document).filter(
+                            Document.submission_id == sub['submission_id']
+                        ).all()
+                        
+                        if docs:
+                            st.markdown("**Documents:**")
+                            for doc in docs:
+                                st.markdown(f"- {doc.document_type}: {doc.filename}")
+                        else:
+                            st.info("No documents found")
+                    finally:
+                        session_temp.close()
             
             with col_btn3:
                 if st.button(f"🔍 View Extracted Fields", key=f"fields_{sub['submission_id']}"):
-                    st.info("Fields viewer coming soon (To-Do #9)...")
+                    # Navigate to fields viewer
+                    st.session_state["fields_submission_id"] = sub['submission_id']
+                    st.info(f"Navigate to Fields Viewer page and enter Submission ID: {sub['submission_id']}")
     
     # Summary statistics
     st.markdown("---")

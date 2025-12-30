@@ -828,9 +828,57 @@ def validate_modification_submission(
             f"for submission {submission_id}"
         )
         
+        # Get all documents for this submission
+        from planproof.db import Document
+        documents = session.query(Document).filter(
+            Document.submission_id == submission_id
+        ).all()
+        
+        if not documents:
+            return {"error": "No documents found for submission"}
+        
         # Run validation on impacted rules only
-        # Note: This would need document-level extraction data
-        # For now, return metadata about what would be revalidated
+        all_findings = []
+        validation_summary = {"pass": 0, "fail": 0, "needs_review": 0, "total": 0}
+        
+        for doc in documents:
+            # Get extraction result for this document
+            from planproof.pipeline.extract import get_extraction_result
+            extraction = get_extraction_result(doc.id, db=db)
+            
+            if not extraction:
+                continue
+            
+            # Run validation with only impacted rules
+            validation = validate_extraction(
+                extraction,
+                impacted_rules,
+                context={"document_id": doc.id, "submission_id": submission_id},
+                db=db,
+                write_to_tables=True
+            )
+            
+            # Collect findings
+            findings = validation.get("findings", [])
+            for finding in findings:
+                finding["document_id"] = doc.id
+                finding["document_name"] = doc.filename
+                finding["revalidated_due_to_change"] = True
+            
+            all_findings.extend(findings)
+            
+            # Update summary
+            summary = validation.get("summary", {})
+            validation_summary["pass"] += summary.get("pass", 0)
+            validation_summary["fail"] += summary.get("fail", 0)
+            validation_summary["needs_review"] += summary.get("needs_review", 0)
+            validation_summary["total"] += summary.get("total", 0)
+        
+        LOGGER.info(
+            f"Targeted revalidation complete: {len(impacted_rules)} rules, "
+            f"{len(all_findings)} findings, {validation_summary['pass']} pass, "
+            f"{validation_summary['fail']} fail, {validation_summary['needs_review']} needs_review"
+        )
         
         return {
             "submission_id": submission_id,
@@ -840,7 +888,9 @@ def validate_modification_submission(
             "impacted_rules": len(impacted_rules),
             "impacted_rule_ids": impacted_rule_ids,
             "revalidation_needed": changeset.requires_validation,
-            "message": f"Targeted revalidation: {len(impacted_rules)} rules need re-evaluation"
+            "findings": all_findings,
+            "summary": validation_summary,
+            "message": f"Targeted revalidation complete: {len(impacted_rules)} rules evaluated, {len(all_findings)} findings"
         }
     
     finally:
