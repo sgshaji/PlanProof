@@ -8,8 +8,6 @@ import time
 
 from azure.core.exceptions import AzureError
 
-from azure.core.exceptions import AzureError
-
 from planproof.config import get_settings
 
 
