@@ -532,6 +532,12 @@ def validate_extraction(
         if session:
             session.close()
 
+    if session:
+        try:
+            session.commit()
+        finally:
+            session.close()
+
     summary = {
         "rule_count": len(rules),
         "pass": sum(1 for f in findings if f["status"] == "pass"),

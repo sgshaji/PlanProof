@@ -16,6 +16,8 @@ from planproof.config import get_settings
 LOGGER = logging.getLogger(__name__)
 _EXTRACTION_CACHE: Dict[str, Dict[str, Any]] = {}
 
+_EXTRACTION_CACHE: Dict[str, Dict[str, Any]] = {}
+
 if TYPE_CHECKING:
     from planproof.storage import StorageClient
     from planproof.db import Database, Document, Artefact
