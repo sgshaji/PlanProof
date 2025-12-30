@@ -47,7 +47,7 @@ def validate_document(
         validation_rules = _get_default_validation_rules()
 
     # Extract text content for field matching
-    all_text = _extract_all_text(extraction_result)
+    text_index = _build_text_index(extraction_result)
 
     from planproof.config import get_settings
 
@@ -62,7 +62,7 @@ def validate_document(
                 field_name=field_name,
                 rule=rule,
                 extraction_result=extraction_result,
-                all_text=all_text
+                text_index=text_index
             )
 
             if session:
@@ -121,7 +121,7 @@ def _validate_field(
     field_name: str,
     rule: Dict[str, Any],
     extraction_result: Dict[str, Any],
-    all_text: str
+    text_index: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
     Validate a single field against a rule.
@@ -144,7 +144,11 @@ def _validate_field(
     max_length = rule.get("max_length")
 
     # Try to extract field value (simple keyword matching for now)
-    extracted_value = _extract_field_value(field_name, all_text, extraction_result)
+    extracted_value = _extract_field_value(
+        field_name,
+        text_index,
+        extraction_result
+    )
 
     # Check if field is required and missing
     if required and not extracted_value:
@@ -212,9 +216,58 @@ def _validate_field(
     }
 
 
+def _normalize_label(label: str) -> str:
+    return " ".join(
+        label.strip()
+        .lower()
+        .replace("_", " ")
+        .replace("-", " ")
+        .replace(":", "")
+        .split()
+    )
+
+
+def _build_text_index(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    label_value_index: Dict[str, str] = {}
+    blocks: List[Dict[str, str]] = []
+
+    for block in extraction_result.get("text_blocks", []):
+        content = block.get("content")
+        if not content:
+            continue
+        blocks.append(
+            {
+                "content": content,
+                "content_lower": content.lower()
+            }
+        )
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        for idx, line in enumerate(lines):
+            if ":" in line:
+                label, value = line.split(":", 1)
+                label = label.strip()
+                value = value.strip()
+                if label and value:
+                    label_value_index[_normalize_label(label)] = value
+                    continue
+
+            if line.endswith(":") and idx + 1 < len(lines):
+                label = line[:-1].strip()
+                value = lines[idx + 1].strip()
+                if label and value:
+                    label_value_index[_normalize_label(label)] = value
+
+    return {
+        "blocks": blocks,
+        "label_value_index": label_value_index,
+        "full_text": _extract_all_text(extraction_result)
+    }
+
+
 def _extract_field_value(
     field_name: str,
-    all_text: str,
+    text_index: Dict[str, Any],
     extraction_result: Dict[str, Any]
 ) -> Optional[str]:
     """
@@ -231,6 +284,42 @@ def _extract_field_value(
         field_name.replace("_", "-"),
         field_name
     ]
+
+    label_value_index = text_index.get("label_value_index", {})
+
+    for keyword in keywords:
+        normalized = _normalize_label(keyword)
+        if normalized in label_value_index:
+            return label_value_index[normalized]
+
+        for label, value in label_value_index.items():
+            if normalized in label:
+                return value
+
+    for keyword in keywords:
+        keyword_lower = keyword.lower()
+        for block in text_index.get("blocks", []):
+            content_lower = block.get("content_lower", "")
+            if keyword_lower not in content_lower:
+                continue
+            lines = block.get("content", "").splitlines()
+            for idx, line in enumerate(lines):
+                line_lower = line.lower()
+                if keyword_lower not in line_lower:
+                    continue
+                if ":" in line:
+                    label, value = line.split(":", 1)
+                    if keyword_lower in label.lower():
+                        value = value.strip()
+                        if value:
+                            return value
+                stripped = line_lower.strip().rstrip(":")
+                if stripped == keyword_lower and idx + 1 < len(lines):
+                    value = lines[idx + 1].strip()
+                    if value:
+                        return value
+
+    all_text = text_index.get("full_text", "")
 
     for keyword in keywords:
         # Look for patterns like "Field Name: value" or "Field Name value"
