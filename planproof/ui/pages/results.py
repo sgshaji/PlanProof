@@ -313,86 +313,216 @@ def render():
     
     # Request Info section
     st.markdown("---")
-    st.markdown("### Request More Information")
+    st.markdown("### 🚨 Request More Information")
     
-    request_info_col1, request_info_col2 = st.columns([3, 1])
-    
-    with request_info_col1:
-        request_info_notes = st.text_area(
-            "Information Needed",
-            key=f"request_info_notes_{run_id}",
-            placeholder="Describe what additional information is required from the applicant...",
-            help="Specify what documents or clarifications are needed"
-        )
-    
-    with request_info_col2:
-        if st.button("📤 Request Info", key=f"request_info_btn_{run_id}", type="secondary"):
-            if not request_info_notes or not request_info_notes.strip():
-                st.error("Please specify what information is needed")
-            else:
-                try:
-                    # Update submission status to needs_info
-                    from planproof.db import Database, Submission
-                    db = Database()
-                    session = db.get_session()
-                    
-                    try:
-                        # Find submission for this run
-                        from planproof.db import Run
-                        run = session.query(Run).filter(Run.id == run_id).first()
+    # Show active requests first
+    try:
+        from planproof.services.request_info_service import get_active_requests
+        from planproof.db import Submission, Run
+        
+        # Get submission ID from run
+        db_check = Database()
+        session_check = db_check.get_session()
+        run = session_check.query(Run).filter(Run.id == run_id).first()
+        submission_id = None
+        
+        if run and run.application_id:
+            submission = session_check.query(Submission).filter(
+                Submission.planning_case_id == run.application_id
+            ).order_by(Submission.created_at.desc()).first()
+            if submission:
+                submission_id = submission.id
+        
+        session_check.close()
+        
+        if submission_id:
+            active_requests = get_active_requests(submission_id, db_check)
+            
+            if active_requests:
+                st.warning(f"⚠️ {len(active_requests)} active information request(s)")
+                for req in active_requests:
+                    with st.expander(f"Request {req.get('request_id', 'N/A')}", expanded=True):
+                        st.markdown(f"**Created:** {req.get('created_at', 'N/A')}")
+                        st.markdown(f"**Officer:** {req.get('officer_name', 'N/A')}")
+                        st.markdown(f"**Status:** {req.get('status', 'pending').upper()}")
                         
-                        if run and run.application_id:
-                            # Get latest submission for application
-                            submission = session.query(Submission).filter(
-                                Submission.planning_case_id == run.application_id
-                            ).order_by(Submission.created_at.desc()).first()
+                        if req.get('missing_items'):
+                            st.markdown("**Missing Items:**")
+                            for item in req['missing_items']:
+                                st.markdown(f"- {item}")
+                        
+                        if req.get('notes'):
+                            st.markdown(f"**Notes:** {req['notes']}")
+    except Exception as e:
+        st.error(f"Could not load active requests: {str(e)}")
+    
+    # Create new request
+    with st.expander("➕ Create New Information Request", expanded=False):
+        officer_name = st.text_input(
+            "Your Name",
+            key=f"officer_name_{run_id}",
+            placeholder="Officer name"
+        )
+        
+        st.markdown("**Select Missing Items:**")
+        missing_items = []
+        
+        col_mi1, col_mi2 = st.columns(2)
+        with col_mi1:
+            if st.checkbox("Site Plan", key=f"mi_siteplan_{run_id}"):
+                missing_items.append("Site Plan")
+            if st.checkbox("Location Plan", key=f"mi_locplan_{run_id}"):
+                missing_items.append("Location Plan")
+            if st.checkbox("Elevations", key=f"mi_elevations_{run_id}"):
+                missing_items.append("Elevations")
+            if st.checkbox("Floor Plans", key=f"mi_floorplans_{run_id}"):
+                missing_items.append("Floor Plans")
+        
+        with col_mi2:
+            if st.checkbox("Heritage Statement", key=f"mi_heritage_{run_id}"):
+                missing_items.append("Heritage Statement")
+            if st.checkbox("Tree Survey", key=f"mi_tree_{run_id}"):
+                missing_items.append("Tree Survey")
+            if st.checkbox("Flood Risk Assessment", key=f"mi_fra_{run_id}"):
+                missing_items.append("Flood Risk Assessment")
+            if st.checkbox("Fee Payment", key=f"mi_fee_{run_id}"):
+                missing_items.append("Fee Payment")
+        
+        custom_item = st.text_input(
+            "Other (specify)",
+            key=f"mi_custom_{run_id}",
+            placeholder="Additional item needed..."
+        )
+        if custom_item:
+            missing_items.append(custom_item)
+        
+        request_info_notes = st.text_area(
+            "Additional Notes",
+            key=f"request_info_notes_{run_id}",
+            placeholder="Provide additional context or specific requirements...",
+            help="Explain why these items are needed"
+        )
+        
+        col_req1, col_req2 = st.columns([1, 3])
+        
+        with col_req1:
+            if st.button("📤 Submit Request", key=f"request_info_btn_{run_id}", type="primary"):
+                if not officer_name:
+                    st.error("Please enter your name")
+                elif not missing_items:
+                    st.error("Please select at least one missing item")
+                else:
+                    try:
+                        from planproof.services.request_info_service import create_request_info
+                        
+                        if submission_id:
+                            result = create_request_info(
+                                submission_id=submission_id,
+                                missing_items=missing_items,
+                                notes=request_info_notes or "No additional notes",
+                                officer_name=officer_name,
+                                db=db_check
+                            )
                             
-                            if submission:
-                                # Update status
-                                submission.status = "needs_info"
+                            if result.get("success"):
+                                st.success("✅ Information request created! Case marked as ON_HOLD")
                                 
-                                # Store request in metadata
-                                metadata = submission.submission_metadata or {}
-                                if "info_requests" not in metadata:
-                                    metadata["info_requests"] = []
+                                # Show exportable checklist
+                                st.markdown("**Exportable Checklist:**")
+                                st.text_area(
+                                    "Checklist",
+                                    value=result.get("checklist_text", ""),
+                                    height=200,
+                                    key=f"checklist_{run_id}"
+                                )
                                 
-                                metadata["info_requests"].append({
-                                    "requested_at": datetime.now().isoformat(),
-                                    "notes": request_info_notes.strip(),
-                                    "run_id": run_id
-                                })
+                                st.download_button(
+                                    "📥 Download Checklist",
+                                    data=result.get("checklist_text", ""),
+                                    file_name=f"info_request_{result['request_record']['request_id']}.txt",
+                                    mime="text/plain"
+                                )
                                 
-                                submission.submission_metadata = metadata
-                                session.commit()
+                                st.markdown("**Email Template:**")
+                                st.text_area(
+                                    "Email",
+                                    value=result.get("email_template", ""),
+                                    height=300,
+                                    key=f"email_{run_id}"
+                                )
                                 
-                                st.success("✅ Information request recorded! Submission marked as 'needs_info'")
+                                st.download_button(
+                                    "📧 Download Email Template",
+                                    data=result.get("email_template", ""),
+                                    file_name=f"email_template_{result['request_record']['request_id']}.txt",
+                                    mime="text/plain"
+                                )
                             else:
-                                st.error("Could not find submission for this run")
+                                st.error(f"Error: {result.get('error', 'Unknown error')}")
                         else:
-                            st.error("Could not find run details")
-                    finally:
-                        session.close()
-                
-                except Exception as e:
-                    st.error(f"Error recording request: {str(e)}")
+                            st.error("Could not find submission for this run")
+                    
+                    except Exception as e:
+                        st.error(f"Error creating request: {str(e)}")
+                        st.exception(e)
     
     # Export buttons
     st.markdown("---")
-    st.markdown("### Export Results")
+    st.markdown("### 📦 Export Decision Package")
     
-    col1, col2 = st.columns(2)
+    st.markdown("Export complete validation results including evidence, overrides, and version comparison")
     
-    with col1:
-        # Download JSON
+    col_exp1, col_exp2, col_exp3, col_exp4 = st.columns(4)
+    
+    with col_exp1:
+        if st.button("📄 Export JSON (Full)", key=f"export_json_full_{run_id}", use_container_width=True):
+            try:
+                from planproof.services.export_service import export_decision_package, export_as_json
+                
+                package = export_decision_package(run_id, db)
+                json_data_full = export_as_json(package)
+                
+                st.download_button(
+                    "📥 Download Full JSON",
+                    data=json_data_full,
+                    file_name=f"decision_package_{run_id}.json",
+                    mime="application/json",
+                    key=f"download_json_full_{run_id}"
+                )
+                st.success("✅ JSON package ready")
+            except Exception as e:
+                st.error(f"Export failed: {str(e)}")
+    
+    with col_exp2:
+        if st.button("📋 Export HTML Report", key=f"export_html_{run_id}", use_container_width=True):
+            try:
+                from planproof.services.export_service import export_decision_package, export_as_html_report
+                
+                package = export_decision_package(run_id, db)
+                html_data = export_as_html_report(package)
+                
+                st.download_button(
+                    "📥 Download HTML",
+                    data=html_data,
+                    file_name=f"decision_report_{run_id}.html",
+                    mime="text/html",
+                    key=f"download_html_{run_id}"
+                )
+                st.success("✅ HTML report ready")
+            except Exception as e:
+                st.error(f"Export failed: {str(e)}")
+    
+    with col_exp3:
+        # Download JSON (simple)
         json_data = json.dumps(results, indent=2, ensure_ascii=False)
         st.download_button(
-            "📥 Download JSON",
+            "📥 Download JSON (Simple)",
             data=json_data,
             file_name=f"results_run_{run_id}.json",
             mime="application/json"
         )
     
-    with col2:
+    with col_exp4:
         # Download run bundle (zip)
         def create_run_bundle():
             """Create a zip file with all run artifacts."""
@@ -425,11 +555,11 @@ def render():
         bundle_data = create_run_bundle()
         if bundle_data:
             st.download_button(
-                "📦 Download Run Bundle (ZIP)",
+                "📦 Download Bundle (ZIP)",
                 data=bundle_data,
                 file_name=f"run_{run_id}_bundle.zip",
                 mime="application/zip"
             )
         else:
-            st.info("Run bundle not available")
+            st.info("Bundle not available")
 

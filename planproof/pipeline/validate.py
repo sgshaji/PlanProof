@@ -430,6 +430,705 @@ def load_rule_catalog(path: str | Path = "artefacts/rule_catalog.json") -> List[
     return rules
 
 
+def _validate_fee(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate FEE_VALIDATION rules (FEE-01, FEE-02)."""
+    fields = context.get("fields", {})
+    rule_config = rule.to_dict().get("config", {})
+    
+    if rule.rule_id == "FEE-01":
+        # Check payment status or receipt reference
+        payment_status = fields.get("fee_payment_status", "").upper()
+        receipt_ref = fields.get("receipt_reference", "")
+        valid_statuses = rule_config.get("valid_statuses", ["PAID"])
+        
+        if payment_status in [s.upper() for s in valid_statuses] or receipt_ref:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"Fee payment verified: {payment_status or 'Receipt: ' + receipt_ref}",
+                "missing_fields": [],
+                "evidence": {"payment_status": payment_status, "receipt_reference": receipt_ref}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "Fee payment not verified: status is not PAID and no receipt reference",
+                "missing_fields": ["fee_payment_status", "receipt_reference"],
+                "evidence": {"payment_status": payment_status or "missing"}
+            }
+    
+    elif rule.rule_id == "FEE-02":
+        # Check fee amount plausibility
+        fee_amount = fields.get("fee_amount")
+        application_type = fields.get("application_type", "").lower()
+        
+        if fee_amount is None:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Fee amount not extracted",
+                "missing_fields": ["fee_amount"],
+                "evidence": {}
+            }
+        
+        try:
+            fee_value = float(fee_amount)
+        except (ValueError, TypeError):
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": f"Invalid fee amount: {fee_amount}",
+                "missing_fields": [],
+                "evidence": {"fee_amount": fee_amount}
+            }
+        
+        min_fee = rule_config.get("min_fee", 0)
+        max_fee = rule_config.get("max_fee", 500000)
+        
+        # Check application-type-specific ranges
+        if "householder" in application_type:
+            min_fee, max_fee = rule_config.get("householder_range", [100, 500])
+        elif "full" in application_type or "major" in application_type:
+            min_fee, max_fee = rule_config.get("full_application_range", [200, 100000])
+        
+        if fee_value <= 0:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": f"Fee amount must be positive: £{fee_value}",
+                "missing_fields": [],
+                "evidence": {"fee_amount": fee_value}
+            }
+        
+        if fee_value < min_fee or fee_value > max_fee:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": "warning",
+                "message": f"Fee amount £{fee_value} outside expected range £{min_fee}-£{max_fee}",
+                "missing_fields": [],
+                "evidence": {"fee_amount": fee_value, "expected_range": [min_fee, max_fee]}
+            }
+        
+        return {
+            "rule_id": rule.rule_id,
+            "status": "pass",
+            "severity": rule.severity,
+            "message": f"Fee amount acceptable: £{fee_value}",
+            "missing_fields": [],
+            "evidence": {"fee_amount": fee_value}
+        }
+    
+    return None
+
+
+def _validate_ownership(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate OWNERSHIP_VALIDATION rules (OWN-01, OWN-02)."""
+    fields = context.get("fields", {})
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    rule_config = rule.to_dict().get("config", {})
+    
+    if rule.rule_id == "OWN-01":
+        # Check exactly one certificate type
+        cert_type = fields.get("certificate_type", "")
+        valid_certs = rule_config.get("valid_certificates", ["A", "B", "C", "D"])
+        
+        if not cert_type:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "No ownership certificate provided",
+                "missing_fields": ["certificate_type"],
+                "evidence": {}
+            }
+        
+        # Normalize cert_type (might be "Certificate A" or just "A")
+        cert_letter = None
+        for c in valid_certs:
+            if c in cert_type.upper():
+                cert_letter = c
+                break
+        
+        if not cert_letter:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": f"Invalid certificate type: {cert_type}. Must be A, B, C, or D",
+                "missing_fields": [],
+                "evidence": {"certificate_type": cert_type}
+            }
+        
+        return {
+            "rule_id": rule.rule_id,
+            "status": "pass",
+            "severity": rule.severity,
+            "message": f"Valid ownership certificate: Certificate {cert_letter}",
+            "missing_fields": [],
+            "evidence": {"certificate_type": cert_letter}
+        }
+    
+    elif rule.rule_id == "OWN-02":
+        # Check certificate name/address matches applicant
+        cert_name = fields.get("certificate_name", "")
+        applicant_name = fields.get("applicant_name", "")
+        
+        if not cert_name or not applicant_name:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Cannot verify certificate match: missing certificate_name or applicant_name",
+                "missing_fields": [f for f in ["certificate_name", "applicant_name"] if not fields.get(f)],
+                "evidence": {"certificate_name": cert_name, "applicant_name": applicant_name}
+            }
+        
+        # Simple fuzzy match (case-insensitive substring check)
+        cert_lower = cert_name.lower()
+        app_lower = applicant_name.lower()
+        
+        if cert_lower in app_lower or app_lower in cert_lower or cert_lower == app_lower:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"Certificate name matches applicant: {cert_name} ≈ {applicant_name}",
+                "missing_fields": [],
+                "evidence": {"certificate_name": cert_name, "applicant_name": applicant_name, "match": True}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": f"Certificate name may not match applicant: '{cert_name}' vs '{applicant_name}'",
+                "missing_fields": [],
+                "evidence": {"certificate_name": cert_name, "applicant_name": applicant_name, "match": False}
+            }
+    
+    return None
+
+
+def _validate_prior_approval(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate PRIOR_APPROVAL rules (PA-01, PA-02)."""
+    fields = context.get("fields", {})
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    
+    # Check if this is a prior approval application
+    application_type = fields.get("application_type", "").lower()
+    is_prior_approval = "prior approval" in application_type or "prior_approval" in application_type
+    
+    if not is_prior_approval:
+        # Rule doesn't apply
+        return {
+            "rule_id": rule.rule_id,
+            "status": "pass",
+            "severity": rule.severity,
+            "message": "Not a Prior Approval application - rule does not apply",
+            "missing_fields": [],
+            "evidence": {"application_type": application_type}
+        }
+    
+    if rule.rule_id == "PA-01":
+        # Check manual registration flag
+        registered_in_m3 = fields.get("registered_in_m3", False)
+        submission_source = fields.get("submission_source", "")
+        
+        # Consider registered if either flag is set
+        is_registered = registered_in_m3 or "manual" in submission_source.lower()
+        
+        if is_registered:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Prior Approval manually registered",
+                "missing_fields": [],
+                "evidence": {"registered_in_m3": registered_in_m3, "submission_source": submission_source}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "Prior Approval requires manual registration flag",
+                "missing_fields": ["registered_in_m3"],
+                "evidence": {"registered_in_m3": False}
+            }
+    
+    elif rule.rule_id == "PA-02":
+        # Check required document set for Prior Approval
+        if not submission_id or not db:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Cannot validate Prior Approval documents: missing submission context",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        from planproof.db import Document
+        session = db.get_session()
+        try:
+            documents = session.query(Document).filter(Document.submission_id == submission_id).all()
+            present_doc_types = {doc.document_type for doc in documents if doc.document_type}
+            
+            required_docs = rule.required_fields  # ["application_form", "location_plan"]
+            missing_docs = [doc for doc in required_docs if doc not in present_doc_types]
+            
+            if missing_docs:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "fail",
+                    "severity": rule.severity,
+                    "message": f"Prior Approval missing required documents: {', '.join(missing_docs)}",
+                    "missing_fields": missing_docs,
+                    "evidence": {"present_documents": list(present_doc_types), "missing_documents": missing_docs}
+                }
+            else:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "pass",
+                    "severity": rule.severity,
+                    "message": "Prior Approval has all required documents",
+                    "missing_fields": [],
+                    "evidence": {"present_documents": list(present_doc_types)}
+                }
+        finally:
+            session.close()
+    
+    return None
+
+
+def _validate_constraint(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate CONSTRAINT_VALIDATION rules (CON-01 through CON-04)."""
+    fields = context.get("fields", {})
+    submission_id = context.get("submission_id")
+    db = context.get("db")
+    rule_config = rule.to_dict().get("config", {})
+    
+    if rule.rule_id == "CON-01":
+        # Check constraint declaration completeness
+        constraint_flags = {
+            "conservation_area": fields.get("conservation_area", False),
+            "listed_building": fields.get("listed_building", False),
+            "tpo": fields.get("tpo", False),
+            "flood_zone": fields.get("flood_zone"),
+        }
+        
+        # Check if any constraint is declared
+        active_constraints = [k for k, v in constraint_flags.items() if v]
+        
+        if not active_constraints:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "No constraints declared",
+                "missing_fields": [],
+                "evidence": {"constraints": constraint_flags}
+            }
+        
+        # Check if constraint evidence/basis is present
+        constraint_evidence = fields.get("constraint_evidence", "")
+        constraint_basis = fields.get("constraint_basis", "")
+        
+        if constraint_evidence or constraint_basis:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"Constraints declared with evidence: {', '.join(active_constraints)}",
+                "missing_fields": [],
+                "evidence": {"active_constraints": active_constraints, "has_evidence": True}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": f"Constraints declared but no supporting evidence: {', '.join(active_constraints)}",
+                "missing_fields": ["constraint_evidence"],
+                "evidence": {"active_constraints": active_constraints, "has_evidence": False}
+            }
+    
+    elif rule.rule_id == "CON-02":
+        # Listed building → Heritage Statement required
+        triggers = rule_config.get("triggers", ["listed_building", "within_conservation_area"])
+        is_triggered = any(fields.get(t, False) for t in triggers)
+        
+        if not is_triggered:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Heritage Statement not required (no listed building or conservation area)",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        # Check if Heritage Statement document exists
+        if not submission_id or not db:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Cannot verify Heritage Statement: missing submission context",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        from planproof.db import Document
+        session = db.get_session()
+        try:
+            heritage_doc = session.query(Document).filter(
+                Document.submission_id == submission_id,
+                Document.document_type.in_(["heritage_statement", "heritage"])
+            ).first()
+            
+            if heritage_doc:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "pass",
+                    "severity": rule.severity,
+                    "message": "Heritage Statement present",
+                    "missing_fields": [],
+                    "evidence": {"document": heritage_doc.filename}
+                }
+            else:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "fail",
+                    "severity": rule.severity,
+                    "message": "Heritage Statement required but not found (listed building or conservation area)",
+                    "missing_fields": ["heritage_statement"],
+                    "evidence": {"triggers": [t for t in triggers if fields.get(t)]}
+                }
+        finally:
+            session.close()
+    
+    elif rule.rule_id == "CON-03":
+        # TPO → Tree Survey required
+        triggers = rule_config.get("triggers", ["tpo", "trees_affected"])
+        is_triggered = any(fields.get(t, False) for t in triggers)
+        
+        if not is_triggered:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Tree Survey not required (no TPO or trees affected)",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        if not submission_id or not db:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Cannot verify Tree Survey: missing submission context",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        from planproof.db import Document
+        session = db.get_session()
+        try:
+            tree_doc = session.query(Document).filter(
+                Document.submission_id == submission_id,
+                Document.document_type == "tree_survey"
+            ).first()
+            
+            if tree_doc:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "pass",
+                    "severity": rule.severity,
+                    "message": "Tree Survey present",
+                    "missing_fields": [],
+                    "evidence": {"document": tree_doc.filename}
+                }
+            else:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "fail",
+                    "severity": rule.severity,
+                    "message": "Tree Survey required but not found (TPO or trees affected)",
+                    "missing_fields": ["tree_survey"],
+                    "evidence": {"triggers": [t for t in triggers if fields.get(t)]}
+                }
+        finally:
+            session.close()
+    
+    elif rule.rule_id == "CON-04":
+        # Flood zone → FRA required
+        triggers = rule_config.get("triggers", ["flood_zone_2", "flood_zone_3"])
+        flood_zone = str(fields.get("flood_zone", "")).lower()
+        is_triggered = any(t.replace("flood_zone_", "") in flood_zone for t in triggers)
+        
+        if not is_triggered:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Flood Risk Assessment not required (not in flood zone 2 or 3)",
+                "missing_fields": [],
+                "evidence": {"flood_zone": flood_zone}
+            }
+        
+        if not submission_id or not db:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Cannot verify Flood Risk Assessment: missing submission context",
+                "missing_fields": [],
+                "evidence": {}
+            }
+        
+        from planproof.db import Document
+        session = db.get_session()
+        try:
+            fra_doc = session.query(Document).filter(
+                Document.submission_id == submission_id,
+                Document.document_type == "flood_risk_assessment"
+            ).first()
+            
+            if fra_doc:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "pass",
+                    "severity": rule.severity,
+                    "message": "Flood Risk Assessment present",
+                    "missing_fields": [],
+                    "evidence": {"document": fra_doc.filename, "flood_zone": flood_zone}
+                }
+            else:
+                return {
+                    "rule_id": rule.rule_id,
+                    "status": "fail",
+                    "severity": rule.severity,
+                    "message": f"Flood Risk Assessment required but not found (flood zone {flood_zone})",
+                    "missing_fields": ["flood_risk_assessment"],
+                    "evidence": {"flood_zone": flood_zone}
+                }
+        finally:
+            session.close()
+    
+    return None
+
+
+def _validate_bng(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate BNG_VALIDATION rules (BNG-01 through BNG-03)."""
+    fields = context.get("fields", {})
+    rule_config = rule.to_dict().get("config", {})
+    
+    application_type = fields.get("application_type", "").lower()
+    is_householder = "householder" in application_type
+    
+    if rule.rule_id == "BNG-01":
+        # BNG applicability decision must be present for non-householder
+        if is_householder:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "BNG not applicable to householder applications",
+                "missing_fields": [],
+                "evidence": {"application_type": application_type}
+            }
+        
+        bng_applicable = fields.get("bng_applicable")
+        
+        if bng_applicable is None or bng_applicable == "":
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "BNG applicability decision missing for non-householder application",
+                "missing_fields": ["bng_applicable"],
+                "evidence": {"application_type": application_type}
+            }
+        
+        return {
+            "rule_id": rule.rule_id,
+            "status": "pass",
+            "severity": rule.severity,
+            "message": f"BNG applicability recorded: {bng_applicable}",
+            "missing_fields": [],
+            "evidence": {"bng_applicable": bng_applicable}
+        }
+    
+    elif rule.rule_id == "BNG-02":
+        # If BNG applicable → 10% claim or metric evidence
+        bng_applicable = fields.get("bng_applicable")
+        
+        if not bng_applicable or str(bng_applicable).lower() in ["false", "no", "0"]:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "BNG not applicable - no 10% requirement",
+                "missing_fields": [],
+                "evidence": {"bng_applicable": bng_applicable}
+            }
+        
+        bng_percentage = fields.get("bng_percentage")
+        bng_metric_doc = fields.get("bng_metric_doc")
+        min_percentage = rule_config.get("min_percentage", 10)
+        
+        # Check if 10% claim or metric document present
+        has_claim = False
+        if bng_percentage:
+            try:
+                pct = float(bng_percentage)
+                has_claim = pct >= min_percentage
+            except (ValueError, TypeError):
+                pass
+        
+        if has_claim or bng_metric_doc:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"BNG 10% requirement met: {bng_percentage}%" if has_claim else "BNG metric document present",
+                "missing_fields": [],
+                "evidence": {"bng_percentage": bng_percentage, "bng_metric_doc": bool(bng_metric_doc)}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "BNG applicable but no 10% claim or metric evidence found",
+                "missing_fields": ["bng_percentage", "bng_metric_doc"],
+                "evidence": {"bng_applicable": True}
+            }
+    
+    elif rule.rule_id == "BNG-03":
+        # If BNG NOT applicable → exemption reason
+        bng_applicable = fields.get("bng_applicable")
+        
+        if bng_applicable and str(bng_applicable).lower() not in ["false", "no", "0"]:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "BNG applicable - exemption not claimed",
+                "missing_fields": [],
+                "evidence": {"bng_applicable": bng_applicable}
+            }
+        
+        exemption_reason = fields.get("bng_exemption_reason", "")
+        
+        if exemption_reason:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"BNG exemption reason provided: {exemption_reason}",
+                "missing_fields": [],
+                "evidence": {"exemption_reason": exemption_reason}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
+                "severity": rule.severity,
+                "message": "BNG exemption claimed but no reason provided",
+                "missing_fields": ["bng_exemption_reason"],
+                "evidence": {"bng_applicable": False}
+            }
+    
+    return None
+
+
+def _validate_plan_quality(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Validate PLAN_QUALITY rules (PLAN-01, PLAN-02)."""
+    fields = context.get("fields", {})
+    rule_config = rule.to_dict().get("config", {})
+    
+    if rule.rule_id == "PLAN-01":
+        # Location plan scale check
+        location_plan_scale = fields.get("location_plan_scale", "")
+        acceptable_scales = rule_config.get("acceptable_scales", ["1:1250", "1:2500"])
+        
+        if not location_plan_scale:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": "Location plan scale not extracted",
+                "missing_fields": ["location_plan_scale"],
+                "evidence": {}
+            }
+        
+        # Normalize scale format
+        scale_normalized = location_plan_scale.replace(" ", "").replace("@", "")
+        
+        if any(scale in scale_normalized for scale in acceptable_scales):
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"Location plan scale acceptable: {location_plan_scale}",
+                "missing_fields": [],
+                "evidence": {"scale": location_plan_scale}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": f"Location plan scale may not be acceptable: {location_plan_scale} (expected: {', '.join(acceptable_scales)})",
+                "missing_fields": [],
+                "evidence": {"scale": location_plan_scale, "acceptable_scales": acceptable_scales}
+            }
+    
+    elif rule.rule_id == "PLAN-02":
+        # Site plan north arrow and scale bar check
+        north_arrow = fields.get("site_plan_north_arrow", False)
+        scale_bar = fields.get("site_plan_scale_bar", False)
+        
+        missing = []
+        if not north_arrow:
+            missing.append("north arrow")
+        if not scale_bar:
+            missing.append("scale bar")
+        
+        if missing:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": rule.severity,
+                "message": f"Site plan missing: {', '.join(missing)}",
+                "missing_fields": ["site_plan_north_arrow"] if not north_arrow else [] + ["site_plan_scale_bar"] if not scale_bar else [],
+                "evidence": {"north_arrow": north_arrow, "scale_bar": scale_bar}
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": "Site plan has north arrow and scale bar",
+                "missing_fields": [],
+                "evidence": {"north_arrow": True, "scale_bar": True}
+            }
+    
+    return None
+
+
 def _dispatch_by_category(
     rule: Rule,
     context: Dict[str, Any]
@@ -448,6 +1147,30 @@ def _dispatch_by_category(
     
     if category == "DOCUMENT_REQUIRED":
         return _validate_document_required(rule, context)
+    elif category == "CONSISTENCY":
+        return _validate_consistency(rule, context)
+    elif category == "MODIFICATION":
+        return _validate_modification(rule, context)
+    elif category == "SPATIAL":
+        return _validate_spatial(rule, context)
+    elif category == "FEE_VALIDATION":
+        return _validate_fee(rule, context)
+    elif category == "OWNERSHIP_VALIDATION":
+        return _validate_ownership(rule, context)
+    elif category == "PRIOR_APPROVAL":
+        return _validate_prior_approval(rule, context)
+    elif category == "CONSTRAINT_VALIDATION":
+        return _validate_constraint(rule, context)
+    elif category == "BNG_VALIDATION":
+        return _validate_bng(rule, context)
+    elif category == "PLAN_QUALITY":
+        return _validate_plan_quality(rule, context)
+    elif category == "FIELD_REQUIRED":
+        # Default field validation (existing logic)
+        return None  # Will be handled by existing logic
+    else:
+        LOGGER.warning(f"Unknown rule category: {category} for rule {rule.rule_id}")
+        return None
     elif category == "CONSISTENCY":
         return _validate_consistency(rule, context)
     elif category == "MODIFICATION":
@@ -768,13 +1491,15 @@ def _validate_modification(rule: Rule, context: Dict[str, Any]) -> Optional[Dict
 def _validate_spatial(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Validate SPATIAL rules.
-    Check spatial metrics (setback distances, heights, areas) when geometry exists.
+    Check spatial metrics (setback distances, heights, areas) against policy thresholds.
     """
     submission_id = context.get("submission_id")
     db = context.get("db")
+    rule_config = rule.to_dict().get("config", {})
     
     if not submission_id or not db:
         return {
+            "rule_id": rule.rule_id,
             "status": "needs_review",
             "severity": rule.severity,
             "message": "Cannot validate spatial rules: missing submission context",
@@ -793,6 +1518,7 @@ def _validate_spatial(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str,
         
         if not features:
             return {
+                "rule_id": rule.rule_id,
                 "status": "needs_review",
                 "severity": "warning",
                 "message": "No geometry features available for spatial validation",
@@ -807,14 +1533,18 @@ def _validate_spatial(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str,
         
         # Get spatial metrics
         all_metrics = []
+        metrics_by_name = {}
         for feature in features:
             metrics = session.query(SpatialMetric).filter(
                 SpatialMetric.geometry_feature_id == feature.id
             ).all()
             all_metrics.extend(metrics)
+            for metric in metrics:
+                metrics_by_name[metric.metric_name.lower()] = metric
         
         if not all_metrics:
             return {
+                "rule_id": rule.rule_id,
                 "status": "needs_review",
                 "severity": "warning",
                 "message": "No spatial metrics computed for validation",
@@ -827,31 +1557,158 @@ def _validate_spatial(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str,
                 }
             }
         
-        # Check spatial constraints from rule
-        # Rule should specify thresholds in rule config
+        # Check spatial constraints from rule config
         violations = []
         evidence_snippets = []
+        passed_checks = []
         
-        # Example: Check setback distance
-        setback_metrics = [m for m in all_metrics if "distance" in m.metric_name.lower() or "setback" in m.metric_name.lower()]
-        for metric in setback_metrics:
-            evidence_snippets.append({
-                "page": 1,
-                "snippet": f"{metric.metric_name}: {metric.metric_value} {metric.metric_unit}",
-                "metric_name": metric.metric_name,
-                "metric_value": metric.metric_value,
-                "metric_unit": metric.metric_unit
-            })
+        # Get thresholds from config
+        thresholds = rule_config.get("thresholds", {})
         
-        # For MVP, if metrics exist, mark as pass (actual threshold checks require rule config)
-        if all_metrics:
+        # Check setback distances
+        if "min_setback" in thresholds:
+            min_setback = thresholds["min_setback"]
+            setback_metrics = [m for m in all_metrics if "setback" in m.metric_name.lower() or "distance_to_boundary" in m.metric_name.lower()]
+            
+            for metric in setback_metrics:
+                try:
+                    value = float(metric.metric_value)
+                    if value < min_setback:
+                        violations.append(f"{metric.metric_name}: {value}{metric.metric_unit} < {min_setback}{metric.metric_unit} (minimum)")
+                        evidence_snippets.append({
+                            "page": 1,
+                            "snippet": f"VIOLATION: {metric.metric_name}: {value}{metric.metric_unit} < {min_setback}{metric.metric_unit}",
+                            "metric_name": metric.metric_name,
+                            "metric_value": value,
+                            "metric_unit": metric.metric_unit,
+                            "threshold": min_setback
+                        })
+                    else:
+                        passed_checks.append(f"{metric.metric_name}: {value}{metric.metric_unit} >= {min_setback}{metric.metric_unit}")
+                        evidence_snippets.append({
+                            "page": 1,
+                            "snippet": f"OK: {metric.metric_name}: {value}{metric.metric_unit}",
+                            "metric_name": metric.metric_name,
+                            "metric_value": value,
+                            "metric_unit": metric.metric_unit
+                        })
+                except (ValueError, TypeError):
+                    pass
+        
+        # Check height limits
+        if "max_height" in thresholds:
+            max_height = thresholds["max_height"]
+            height_metrics = [m for m in all_metrics if "height" in m.metric_name.lower()]
+            
+            for metric in height_metrics:
+                try:
+                    value = float(metric.metric_value)
+                    if value > max_height:
+                        violations.append(f"{metric.metric_name}: {value}{metric.metric_unit} > {max_height}{metric.metric_unit} (maximum)")
+                        evidence_snippets.append({
+                            "page": 1,
+                            "snippet": f"VIOLATION: {metric.metric_name}: {value}{metric.metric_unit} > {max_height}{metric.metric_unit}",
+                            "metric_name": metric.metric_name,
+                            "metric_value": value,
+                            "metric_unit": metric.metric_unit,
+                            "threshold": max_height
+                        })
+                    else:
+                        passed_checks.append(f"{metric.metric_name}: {value}{metric.metric_unit} <= {max_height}{metric.metric_unit}")
+                        evidence_snippets.append({
+                            "page": 1,
+                            "snippet": f"OK: {metric.metric_name}: {value}{metric.metric_unit}",
+                            "metric_name": metric.metric_name,
+                            "metric_value": value,
+                            "metric_unit": metric.metric_unit
+                        })
+                except (ValueError, TypeError):
+                    pass
+        
+        # Check area limits
+        if "max_area" in thresholds or "min_area" in thresholds:
+            area_metrics = [m for m in all_metrics if "area" in m.metric_name.lower() or "footprint" in m.metric_name.lower()]
+            
+            for metric in area_metrics:
+                try:
+                    value = float(metric.metric_value)
+                    
+                    if "max_area" in thresholds:
+                        max_area = thresholds["max_area"]
+                        if value > max_area:
+                            violations.append(f"{metric.metric_name}: {value}{metric.metric_unit} > {max_area}{metric.metric_unit} (maximum)")
+                            evidence_snippets.append({
+                                "page": 1,
+                                "snippet": f"VIOLATION: {metric.metric_name}: {value}{metric.metric_unit} > {max_area}{metric.metric_unit}",
+                                "metric_name": metric.metric_name,
+                                "metric_value": value,
+                                "metric_unit": metric.metric_unit,
+                                "threshold": max_area
+                            })
+                        else:
+                            passed_checks.append(f"{metric.metric_name}: {value}{metric.metric_unit} <= {max_area}{metric.metric_unit}")
+                    
+                    if "min_area" in thresholds:
+                        min_area = thresholds["min_area"]
+                        if value < min_area:
+                            violations.append(f"{metric.metric_name}: {value}{metric.metric_unit} < {min_area}{metric.metric_unit} (minimum)")
+                            evidence_snippets.append({
+                                "page": 1,
+                                "snippet": f"VIOLATION: {metric.metric_name}: {value}{metric.metric_unit} < {min_area}{metric.metric_unit}",
+                                "metric_name": metric.metric_name,
+                                "metric_value": value,
+                                "metric_unit": metric.metric_unit,
+                                "threshold": min_area
+                            })
+                        else:
+                            passed_checks.append(f"{metric.metric_name}: {value}{metric.metric_unit} >= {min_area}{metric.metric_unit}")
+                except (ValueError, TypeError):
+                    pass
+        
+        # If no thresholds configured, mark as needs_review
+        if not thresholds:
             return {
-                "status": "pass",
+                "rule_id": rule.rule_id,
+                "status": "needs_review",
+                "severity": "warning",
+                "message": f"Spatial metrics present ({len(all_metrics)} metrics) but no policy thresholds configured",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": [{
+                        "page": 1,
+                        "snippet": f"{m.metric_name}: {m.metric_value} {m.metric_unit}"
+                    } for m in all_metrics[:5]],
+                    "metrics_count": len(all_metrics),
+                    "features_count": len(features)
+                }
+            }
+        
+        # Determine status based on violations
+        if violations:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "fail",
                 "severity": rule.severity,
-                "message": f"Spatial metrics available for validation ({len(all_metrics)} metrics)",
+                "message": f"Spatial violations found: {', '.join(violations[:3])}",
                 "missing_fields": [],
                 "evidence": {
                     "evidence_snippets": evidence_snippets,
+                    "violations": violations,
+                    "passed_checks": passed_checks,
+                    "metrics_count": len(all_metrics),
+                    "features_count": len(features)
+                }
+            }
+        else:
+            return {
+                "rule_id": rule.rule_id,
+                "status": "pass",
+                "severity": rule.severity,
+                "message": f"All spatial checks passed ({len(passed_checks)} checks)",
+                "missing_fields": [],
+                "evidence": {
+                    "evidence_snippets": evidence_snippets[:10],
+                    "passed_checks": passed_checks,
                     "metrics_count": len(all_metrics),
                     "features_count": len(features)
                 }

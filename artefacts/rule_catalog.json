@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "source": "validation_requirements.md",
-  "rule_count": 15,
+  "rule_count": 30,
   "rules": [
     {
       "rule_id": "R1",
@@ -301,6 +301,327 @@
       "applies_to": [],
       "tags": ["consistency_check"],
       "rule_category": "CONSISTENCY"
+    },
+    {
+      "rule_id": "FEE-01",
+      "title": "Fee Payment Present",
+      "description": "Check fee payment status or receipt reference is present.",
+      "required_fields": [
+        "fee_payment_status",
+        "receipt_reference"
+      ],
+      "required_fields_any": true,
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["fee", "payment", "receipt", "paid"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": ["application_form"],
+      "tags": ["fee"],
+      "rule_category": "FEE_VALIDATION",
+      "config": {
+        "valid_statuses": ["PAID", "paid", "Paid"]
+      }
+    },
+    {
+      "rule_id": "FEE-02",
+      "title": "Fee Amount Plausibility",
+      "description": "Fee amount must be positive and within acceptable range for application type.",
+      "required_fields": [
+        "fee_amount"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["fee", "amount", "payment"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": ["application_form"],
+      "tags": ["fee"],
+      "rule_category": "FEE_VALIDATION",
+      "config": {
+        "min_fee": 0,
+        "max_fee": 500000,
+        "householder_range": [100, 500],
+        "full_application_range": [200, 100000]
+      }
+    },
+    {
+      "rule_id": "OWN-01",
+      "title": "Exactly One Ownership Certificate",
+      "description": "Exactly one ownership certificate (A, B, C, or D) must be provided.",
+      "required_fields": [
+        "certificate_type"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["certificate", "ownership", "A", "B", "C", "D"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": ["application_form"],
+      "tags": ["ownership", "certificate"],
+      "rule_category": "OWNERSHIP_VALIDATION",
+      "config": {
+        "valid_certificates": ["A", "B", "C", "D"]
+      }
+    },
+    {
+      "rule_id": "OWN-02",
+      "title": "Certificate Matches Applicant Details",
+      "description": "Certificate name/address should match application applicant/agent details.",
+      "required_fields": [
+        "certificate_name",
+        "applicant_name"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["certificate", "applicant", "name", "address"],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": ["application_form"],
+      "tags": ["ownership", "consistency"],
+      "rule_category": "OWNERSHIP_VALIDATION"
+    },
+    {
+      "rule_id": "PA-01",
+      "title": "Prior Approval Manual Registration Flag",
+      "description": "Prior Approval applications require manual registration flag to be set.",
+      "required_fields": [],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["prior approval"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["prior_approval"],
+      "rule_category": "PRIOR_APPROVAL",
+      "config": {
+        "requires_manual_registration": true
+      }
+    },
+    {
+      "rule_id": "PA-02",
+      "title": "Prior Approval Required Document Set",
+      "description": "Prior Approval applications must contain minimum required document set.",
+      "required_fields": [
+        "application_form",
+        "location_plan"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": [],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["prior_approval", "document_check"],
+      "rule_category": "PRIOR_APPROVAL"
+    },
+    {
+      "rule_id": "CON-01",
+      "title": "Constraint Declaration Completeness",
+      "description": "If constraint flag is set, supporting evidence must be present.",
+      "required_fields": [],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["constraint", "conservation", "listed", "TPO", "flood"],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": [],
+      "tags": ["constraints"],
+      "rule_category": "CONSTRAINT_VALIDATION"
+    },
+    {
+      "rule_id": "CON-02",
+      "title": "Listed Building Heritage Statement Required",
+      "description": "If listed building or within conservation area, Heritage Statement is required.",
+      "required_fields": [
+        "heritage_statement"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["heritage", "listed building", "conservation area"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["constraints", "document_check"],
+      "rule_category": "CONSTRAINT_VALIDATION",
+      "config": {
+        "triggers": ["listed_building", "within_conservation_area"]
+      }
+    },
+    {
+      "rule_id": "CON-03",
+      "title": "TPO Tree Survey Required",
+      "description": "If TPO present or trees affected, tree survey/arboricultural report required.",
+      "required_fields": [
+        "tree_survey"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["tree", "TPO", "arboricultural", "survey"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["constraints", "document_check"],
+      "rule_category": "CONSTRAINT_VALIDATION",
+      "config": {
+        "triggers": ["tpo", "trees_affected"]
+      }
+    },
+    {
+      "rule_id": "CON-04",
+      "title": "Flood Zone Flood Risk Assessment Required",
+      "description": "If flood zone 2 or 3, Flood Risk Assessment is required.",
+      "required_fields": [
+        "flood_risk_assessment"
+      ],
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["flood", "FRA", "risk assessment"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["constraints", "document_check"],
+      "rule_category": "CONSTRAINT_VALIDATION",
+      "config": {
+        "triggers": ["flood_zone_2", "flood_zone_3"]
+      }
+    },
+    {
+      "rule_id": "BNG-01",
+      "title": "BNG Applicability Decision Present",
+      "description": "Non-householder applications must have BNG applicability decision recorded.",
+      "required_fields": [
+        "bng_applicable"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["biodiversity", "net gain", "BNG", "10%"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["biodiversity", "BNG"],
+      "rule_category": "BNG_VALIDATION",
+      "config": {
+        "applies_to_types": ["full_application", "major_application"]
+      }
+    },
+    {
+      "rule_id": "BNG-02",
+      "title": "BNG 10% Claim or Metric Evidence",
+      "description": "If BNG applicable, must have 10% improvement claim or metric document.",
+      "required_fields": [
+        "bng_percentage",
+        "bng_metric_doc"
+      ],
+      "required_fields_any": true,
+      "evidence": {
+        "source_types": [
+          "all"
+        ],
+        "keywords": ["biodiversity", "metric", "10%", "improvement"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["biodiversity", "BNG"],
+      "rule_category": "BNG_VALIDATION",
+      "config": {
+        "min_percentage": 10
+      }
+    },
+    {
+      "rule_id": "BNG-03",
+      "title": "BNG Exemption Reason Present",
+      "description": "If BNG not applicable, exemption reason and evidence must be present.",
+      "required_fields": [
+        "bng_exemption_reason"
+      ],
+      "evidence": {
+        "source_types": [
+          "application_form"
+        ],
+        "keywords": ["exempt", "exemption", "BNG"],
+        "min_confidence": 0.6
+      },
+      "severity": "error",
+      "applies_to": [],
+      "tags": ["biodiversity", "BNG"],
+      "rule_category": "BNG_VALIDATION"
+    },
+    {
+      "rule_id": "PLAN-01",
+      "title": "Location Plan Scale Present and Acceptable",
+      "description": "Location plan must have acceptable scale (1:1250 or 1:2500).",
+      "required_fields": [
+        "location_plan_scale"
+      ],
+      "evidence": {
+        "source_types": [
+          "location_plan"
+        ],
+        "keywords": ["scale", "1:1250", "1:2500"],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": ["location_plan"],
+      "tags": ["plan_quality"],
+      "rule_category": "PLAN_QUALITY",
+      "config": {
+        "acceptable_scales": ["1:1250", "1:2500"]
+      }
+    },
+    {
+      "rule_id": "PLAN-02",
+      "title": "Site Plan North Arrow and Scale Bar",
+      "description": "Site plan must have north arrow and scale bar.",
+      "required_fields": [
+        "site_plan_north_arrow",
+        "site_plan_scale_bar"
+      ],
+      "evidence": {
+        "source_types": [
+          "site_plan"
+        ],
+        "keywords": ["north", "arrow", "scale", "bar"],
+        "min_confidence": 0.6
+      },
+      "severity": "warning",
+      "applies_to": ["site_plan"],
+      "tags": ["plan_quality"],
+      "rule_category": "PLAN_QUALITY"
     }
   ]
 }

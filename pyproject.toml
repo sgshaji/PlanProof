@@ -1,3 +1,75 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "planproof"
+version = "1.0.0"
+description = "AI-powered planning application validation system"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "PlanProof Team", email = "team@planproof.com"}
+]
+keywords = [
+    "planning", 
+    "validation", 
+    "ai", 
+    "azure", 
+    "document-intelligence",
+    "openai",
+    "streamlit"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Government",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Office/Business",
+]
+
+dependencies = [
+    "streamlit>=1.28.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "geoalchemy2>=0.14.0",
+    "azure-storage-blob>=12.19.0",
+    "azure-ai-formrecognizer>=3.3.0",
+    "openai>=1.0.0",
+    "alembic>=1.12.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.9.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/your-org/planproof"
+Documentation = "https://github.com/your-org/planproof/tree/main/docs"
+Repository = "https://github.com/your-org/planproof"
+Issues = "https://github.com/your-org/planproof/issues"
+
+[project.scripts]
+planproof = "main:main"
+planproof-ui = "run_ui:main"
+
+[tool.setuptools]
+packages = ["planproof"]
+
+[tool.setuptools.package-data]
+planproof = ["artefacts/*.json"]
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
@@ -6,29 +78,95 @@ exclude = '''
 /( 
   \.git
   | \.venv
+  | venv
   | build
   | dist
+  | runs
   | tests/fixtures
+  | __pycache__
 )/
 '''
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-exclude = ["tests/fixtures"]
+exclude = [
+    "tests/fixtures",
+    "runs",
+    "__pycache__",
+    ".venv",
+    "venv",
+    "alembic/versions",
+]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "T20"]
+ignore = [
+    "E501",  # Line too long (handled by Black)
+    "B008",  # Function calls in argument defaults
+    "A003",  # Class attribute shadows Python builtin
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Unused imports OK in __init__.py
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
 testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["planproof"]
+omit = [
+    "*/tests/*",
+    "*/alembic/*",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/.venv/*",
+]
+
+[tool.coverage.report]
+precision = 2
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
 
 [tool.mypy]
 python_version = "3.11"
-ignore_missing_imports = true
-warn_unused_ignores = true
-no_implicit_optional = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
 check_untyped_defs = true
-exclude = "tests/fixtures"
+disallow_untyped_decorators = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+ignore_missing_imports = true
+exclude = [
+    "tests/fixtures",
+    "alembic/versions",
+    "runs",
+]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
