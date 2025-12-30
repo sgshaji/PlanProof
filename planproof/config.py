@@ -11,7 +11,7 @@ Required variables must be set or the application will fail to start.
 
 import os
 from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, field_validator
 
 
@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     All settings use Field aliases to map to uppercase environment variable names
     (e.g., DATABASE_URL). The .env file should contain these uppercase variable names.
     """
+    
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"  # Ignore extra fields in .env that aren't in the model
+    )
 
     # Azure Storage
     azure_storage_connection_string: str = Field(..., alias="AZURE_STORAGE_CONNECTION_STRING")
@@ -65,12 +72,6 @@ class Settings(BaseSettings):
     # Retry policy
     azure_retry_max_attempts: int = Field(default=3, alias="AZURE_RETRY_MAX_ATTEMPTS")
     azure_retry_base_delay_s: float = Field(default=0.5, alias="AZURE_RETRY_BASE_DELAY_S")
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
-        extra = "ignore"  # Ignore extra fields in .env that aren't in the model
 
     @field_validator("log_level")
     @classmethod
