@@ -656,6 +656,25 @@ class Database:
         finally:
             session.close()
 
+    def create_pages_bulk(
+        self,
+        pages: List[Page],
+        session: Optional[Session] = None
+    ) -> List[Page]:
+        """Create multiple page records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(pages)
+            session.commit()
+            for page in pages:
+                session.refresh(page)
+            return pages
+        finally:
+            if owns_session:
+                session.close()
+
     def create_evidence(
         self,
         document_id: int,
@@ -689,6 +708,25 @@ class Database:
         finally:
             session.close()
 
+    def create_evidence_bulk(
+        self,
+        evidence_items: List[Evidence],
+        session: Optional[Session] = None
+    ) -> List[Evidence]:
+        """Create multiple evidence records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(evidence_items)
+            session.commit()
+            for evidence in evidence_items:
+                session.refresh(evidence)
+            return evidence_items
+        finally:
+            if owns_session:
+                session.close()
+
     def create_extracted_field(
         self,
         submission_id: int,
@@ -717,6 +755,25 @@ class Database:
             return field
         finally:
             session.close()
+
+    def create_extracted_fields_bulk(
+        self,
+        fields: List[ExtractedField],
+        session: Optional[Session] = None
+    ) -> List[ExtractedField]:
+        """Create multiple extracted field records in a single transaction."""
+        owns_session = session is None
+        if session is None:
+            session = self.get_session()
+        try:
+            session.add_all(fields)
+            session.commit()
+            for field in fields:
+                session.refresh(field)
+            return fields
+        finally:
+            if owns_session:
+                session.close()
 
     def get_extracted_fields_for_submission(
         self,
@@ -763,4 +820,3 @@ class Database:
             return result
         finally:
             session.close()
-

@@ -44,6 +44,27 @@ class Settings(BaseSettings):
 
     # Optional: Logging
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_json: bool = Field(default=True, alias="LOG_JSON")
+
+    # Feature flags
+    enable_extraction_cache: bool = Field(default=True, alias="ENABLE_EXTRACTION_CACHE")
+    enable_db_writes: bool = Field(default=True, alias="ENABLE_DB_WRITES")
+    enable_llm_gate: bool = Field(default=True, alias="ENABLE_LLM_GATE")
+
+    # DocIntel execution flags
+    docintel_use_url: bool = Field(default=True, alias="DOCINTEL_USE_URL")
+    docintel_page_parallelism: int = Field(default=1, alias="DOCINTEL_PAGE_PARALLELISM")
+    docintel_pages_per_batch: int = Field(default=5, alias="DOCINTEL_PAGES_PER_BATCH")
+
+    # LLM context limits
+    llm_context_max_chars: int = Field(default=6000, alias="LLM_CONTEXT_MAX_CHARS")
+    llm_context_max_blocks: int = Field(default=80, alias="LLM_CONTEXT_MAX_BLOCKS")
+    llm_field_context_max_chars: int = Field(default=4000, alias="LLM_FIELD_CONTEXT_MAX_CHARS")
+    llm_field_context_max_blocks: int = Field(default=30, alias="LLM_FIELD_CONTEXT_MAX_BLOCKS")
+
+    # Retry policy
+    azure_retry_max_attempts: int = Field(default=3, alias="AZURE_RETRY_MAX_ATTEMPTS")
+    azure_retry_base_delay_s: float = Field(default=0.5, alias="AZURE_RETRY_BASE_DELAY_S")
 
     class Config:
         env_file = ".env"
@@ -78,4 +99,3 @@ def reload_settings() -> Settings:
     global _settings
     _settings = Settings()
     return _settings
-

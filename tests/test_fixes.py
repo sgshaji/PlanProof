@@ -78,6 +78,7 @@ def test_document(file_path: Path, expected: dict, app_ref: str = "TEST-2025"):
             pdf_bytes,
             ingested_with_context,
             docintel=docintel,
+            storage_client=storage_client,
             db=db,
             write_to_tables=False  # Don't write to DB for test
         )
@@ -308,4 +309,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
