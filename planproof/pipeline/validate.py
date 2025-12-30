@@ -34,6 +34,7 @@ def validate_document(
 
     # Get extraction result
     from planproof.pipeline.extract import get_extraction_result
+    from planproof.db import ValidationResult
 
     extraction_result = get_extraction_result(document_id, db=db)
     if extraction_result is None:
@@ -47,7 +48,8 @@ def validate_document(
     all_text = _extract_all_text(extraction_result)
 
     # Apply validation rules
-    validation_results = []
+    validation_results: List[Dict[str, Any]] = []
+    validation_rows = []
     session = db.get_session()
 
     try:
@@ -73,13 +75,15 @@ def validate_document(
                 evidence_location=result.get("evidence_location")
             )
             session.add(validation_result)
+            validation_rows.append(validation_result)
             validation_results.append(result)
 
         session.commit()
 
         # Refresh to get IDs
-        for vr in validation_results:
-            session.refresh(vr)
+        for row, result in zip(validation_rows, validation_results, strict=False):
+            session.refresh(row)
+            result["id"] = row.id
 
     finally:
         session.close()
@@ -371,6 +375,10 @@ def validate_extraction(
     document_id = context.get("document_id")
     submission_id = context.get("submission_id")
 
+    session = None
+    if write_to_tables and db:
+        session = db.get_session()
+
     for rule in rules:
         # Skip rule if it doesn't apply to this document type
         if rule.applies_to and len(rule.applies_to) > 0:
@@ -445,42 +453,36 @@ def validate_extraction(
             findings.append(finding)
             
             # Write to ValidationCheck table if enabled
-            if write_to_tables and db:
+            if session:
                 try:
-                    session = db.get_session()
-                    try:
-                        from planproof.db import Evidence
-                        # Get evidence IDs for this rule
-                        for ev_key in evidence_index.keys():
-                            evidence = session.query(Evidence).filter(
-                                Evidence.document_id == document_id,
-                                Evidence.evidence_key == ev_key
-                            ).first()
-                            if evidence:
-                                evidence_ids.append(evidence.id)
-                        
-                        # Map status to ValidationStatus enum
-                        if status == "pass":
-                            check_status = ValidationStatus.PASS
-                        elif status == "needs_review":
-                            check_status = ValidationStatus.NEEDS_REVIEW
-                        else:
-                            check_status = ValidationStatus.FAIL
-                        
-                        validation_check = ValidationCheck(
-                            submission_id=submission_id,
-                            document_id=document_id,
-                            rule_id_string=rule.rule_id,
-                            status=check_status,
-                            explanation=finding["message"],
-                            evidence_ids=evidence_ids if evidence_ids else None
-                        )
-                        session.add(validation_check)
-                        session.commit()
-                    finally:
-                        session.close()
-                except Exception as e:
-                    # ValidationCheck might already exist or error, continue
+                    from planproof.db import Evidence
+                    # Get evidence IDs for this rule
+                    for ev_key in evidence_index.keys():
+                        evidence = session.query(Evidence).filter(
+                            Evidence.document_id == document_id,
+                            Evidence.evidence_key == ev_key
+                        ).first()
+                        if evidence:
+                            evidence_ids.append(evidence.id)
+
+                    # Map status to ValidationStatus enum
+                    if status == "pass":
+                        check_status = ValidationStatus.PASS
+                    elif status == "needs_review":
+                        check_status = ValidationStatus.NEEDS_REVIEW
+                    else:
+                        check_status = ValidationStatus.FAIL
+
+                    validation_check = ValidationCheck(
+                        submission_id=submission_id,
+                        document_id=document_id,
+                        rule_id_string=rule.rule_id,
+                        status=check_status,
+                        explanation=finding["message"],
+                        evidence_ids=evidence_ids if evidence_ids else None
+                    )
+                    session.add(validation_check)
+                except Exception:
                     pass
         else:
             finding = {
@@ -495,24 +497,24 @@ def validate_extraction(
             findings.append(finding)
             
             # Write to ValidationCheck table if enabled
-            if write_to_tables and db:
+            if session:
                 try:
-                    session = db.get_session()
-                    try:
-                        validation_check = ValidationCheck(
-                            submission_id=submission_id,
-                            document_id=document_id,
-                            rule_id_string=rule.rule_id,
-                            status=ValidationStatus.PASS,
-                            explanation="All required fields present."
-                        )
-                        session.add(validation_check)
-                        session.commit()
-                    finally:
-                        session.close()
-                except Exception as e:
-                    # ValidationCheck might already exist or error, continue
+                    validation_check = ValidationCheck(
+                        submission_id=submission_id,
+                        document_id=document_id,
+                        rule_id_string=rule.rule_id,
+                        status=ValidationStatus.PASS,
+                        explanation="All required fields present."
+                    )
+                    session.add(validation_check)
+                except Exception:
                     pass
+
+    if session:
+        try:
+            session.commit()
+        finally:
+            session.close()
 
     summary = {
         "rule_count": len(rules),

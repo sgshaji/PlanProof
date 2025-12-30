@@ -10,6 +10,8 @@ from datetime import datetime
 
 from planproof.docintel import DocumentIntelligence
 
+_EXTRACTION_CACHE: Dict[str, Dict[str, Any]] = {}
+
 if TYPE_CHECKING:
     from planproof.storage import StorageClient
     from planproof.db import Database, Document, Artefact
@@ -95,6 +97,9 @@ def extract_document(
         document.page_count = extraction_result["metadata"]["page_count"]
         document.docintel_model = model
         document.processed_at = datetime.utcnow()
+        if not document.document_type:
+            from planproof.pipeline.field_mapper import classify_document
+            document.document_type = classify_document(extraction_result.get("text_blocks", []))
 
         # Store extraction result as JSON artefact
         # Ensure the result is fully serializable (deep copy to remove any object references)
@@ -175,8 +180,14 @@ def get_extraction_result(
         container = blob_uri_parts[1]
         blob_name = blob_uri_parts[2]
 
+        cache_key = artefact.blob_uri
+        if cache_key in _EXTRACTION_CACHE:
+            return _EXTRACTION_CACHE[cache_key]
+
         artefact_bytes = storage_client.download_blob(container, blob_name)
-        return jsonlib.loads(artefact_bytes.decode("utf-8"))
+        result = jsonlib.loads(artefact_bytes.decode("utf-8"))
+        _EXTRACTION_CACHE[cache_key] = result
+        return result
 
     finally:
         session.close()
@@ -330,7 +341,8 @@ def extract_from_pdf_bytes(
                 evidence_type="text_block",
                 evidence_key=evidence_key,
                 snippet=snippet,
-                content=content
+                content=content,
+                bbox=block.get("bounding_box")
             ))
         
         # Add index to block for field mapper reference
@@ -366,7 +378,8 @@ def extract_from_pdf_bytes(
                 page_number=page_num,
                 evidence_type="table",
                 evidence_key=evidence_key,
-                snippet=snippet
+                snippet=snippet,
+                bbox=table.get("bounding_box")
             ))
     
     # Merge field-specific evidence into general evidence_index
