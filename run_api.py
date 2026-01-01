@@ -5,6 +5,12 @@ Run FastAPI server for PlanProof API.
 Usage:
     python run_api.py
 
+    Development mode (auto-reload enabled):
+        ENVIRONMENT=development python run_api.py
+
+    Production mode (auto-reload disabled):
+        ENVIRONMENT=production python run_api.py
+
 API will be available at:
     - http://localhost:8000
     - API Docs: http://localhost:8000/api/docs
@@ -12,6 +18,7 @@ API will be available at:
 """
 
 import sys
+import os
 from pathlib import Path
 
 # Add project root to Python path
@@ -22,10 +29,20 @@ if str(project_root) not in sys.path:
 import uvicorn
 
 if __name__ == "__main__":
+    # Determine reload based on environment
+    # Only enable auto-reload in development mode
+    environment = os.getenv("ENVIRONMENT", "production").lower()
+    enable_reload = environment == "development"
+
+    if enable_reload:
+        print("⚠️  Running in DEVELOPMENT mode with auto-reload enabled")
+    else:
+        print("✓ Running in PRODUCTION mode with auto-reload disabled")
+
     uvicorn.run(
         "planproof.api.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,  # Auto-reload on code changes (development only)
+        reload=enable_reload,
         log_level="info"
     )

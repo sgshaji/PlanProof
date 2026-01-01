@@ -73,6 +73,16 @@ class Settings(BaseSettings):
     azure_retry_max_attempts: int = Field(default=3, alias="AZURE_RETRY_MAX_ATTEMPTS")
     azure_retry_base_delay_s: float = Field(default=0.5, alias="AZURE_RETRY_BASE_DELAY_S")
 
+    # API Configuration
+    api_cors_origins: list[str] = Field(
+        default=["http://localhost:3000", "http://localhost:8501"],
+        alias="API_CORS_ORIGINS"
+    )
+    api_keys: list[str] = Field(default_factory=list, alias="API_KEYS")
+    jwt_secret_key: str = Field(default="", alias="JWT_SECRET_KEY")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_expiration_minutes: int = Field(default=60, alias="JWT_EXPIRATION_MINUTES")
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:

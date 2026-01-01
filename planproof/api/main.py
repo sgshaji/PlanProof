@@ -25,13 +25,19 @@ app = FastAPI(
     openapi_url="/api/openapi.json"
 )
 
-# CORS middleware (configure for production)
+# CORS middleware - restrict to configured origins
+# Configure allowed origins via API_CORS_ORIGINS environment variable
+# Format: comma-separated list, e.g., "http://localhost:3000,https://app.example.com"
+cors_origins = settings.api_cors_origins
+if isinstance(cors_origins, str):
+    cors_origins = [origin.strip() for origin in cors_origins.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Restrict in production
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
 )
 
 # Include routers
