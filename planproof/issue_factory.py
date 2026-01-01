@@ -278,13 +278,15 @@ def create_m3_registration_issue(rule_id: str) -> EnhancedIssue:
 
 
 def create_pa_required_docs_issue(
-    missing_docs: List[str],
     rule_id: str,
-    linked_issues: Dict[str, str]
+    pa_type: str,
+    missing_docs: List[str],
+    linked_issues: Optional[Dict[str, str]] = None
 ) -> EnhancedIssue:
     """Create issue for PA required documents missing."""
     
     issue_id = "PA-002-REQ-DOCS"
+    linked_issues = linked_issues or {}
     
     doc_labels = [doc.replace('_', ' ').title() for doc in missing_docs]
     docs_str = " and ".join(doc_labels)
@@ -292,7 +294,7 @@ def create_pa_required_docs_issue(
     user_message = UserMessage(
         title="Prior Approval mandatory documents missing",
         subtitle="Required",
-        description=f"Prior Approval applications must include: {docs_str}. One or more are missing.",
+        description=f"Prior Approval {pa_type} applications must include: {docs_str}. One or more are missing.",
         impact="Prior Approval cannot be determined without these mandatory documents."
     )
     

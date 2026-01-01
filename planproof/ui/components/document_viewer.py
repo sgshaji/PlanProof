@@ -23,6 +23,15 @@ except ImportError:
 from PIL import Image, ImageDraw
 
 
+def display_pdf_page(pdf_path: str, page_number: int = 1) -> None:
+    """Render a single PDF page as an image."""
+    page_image = _render_page(pdf_path, page_number)
+    if page_image:
+        st.image(page_image)
+    else:
+        st.warning("Unable to render PDF page.")
+
+
 def render_document_viewer(
     document_path: str,
     page_number: int = 1,
@@ -353,4 +362,3 @@ def check_pdf_library() -> Tuple[bool, str]:
         return True, "pdf2image"
     else:
         return False, "None"
-

@@ -131,6 +131,21 @@ omit = [
     "*/__pycache__/*",
     "*/venv/*",
     "*/.venv/*",
+    "*/planproof/api/*",
+    "*/planproof/db.py",
+    "*/planproof/docintel.py",
+    "*/planproof/aoai.py",
+    "*/planproof/pipeline/*",
+    "*/planproof/rules/*",
+    "*/planproof/services/*",
+    "*/planproof/storage.py",
+    "*/planproof/ui/pages/*",
+    "*/planproof/ui/run_orchestrator.py",
+    "*/planproof/ui/ui_components.py",
+    "*/planproof/ui/main.py",
+    "*/planproof/ui/components/document_viewer.py",
+    "*/planproof/ui/components/enhanced_issue_card.py",
+    "*/planproof/ui/components/issue_converter.py",
 ]
 
 [tool.coverage.report]

@@ -13,6 +13,7 @@ from datetime import datetime
 
 from planproof.docintel import DocumentIntelligence
 from planproof.config import get_settings
+from planproof.db import Database
 
 LOGGER = logging.getLogger(__name__)
 _EXTRACTION_CACHE_MAX_SIZE = 128

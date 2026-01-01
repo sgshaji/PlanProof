@@ -299,7 +299,7 @@ class TestDocumentIntelligence:
 class TestAzureOpenAIClient:
     """Tests for Azure OpenAI client."""
     
-    @patch('planproof.aoai.AzureOpenAI')
+    @patch('openai.AzureOpenAI')
     def test_init_creates_client(self, mock_openai_class):
         """Test AzureOpenAIClient initialization."""
         client = AzureOpenAIClient()
@@ -307,7 +307,7 @@ class TestAzureOpenAIClient:
         assert client is not None
         assert mock_openai_class.called
     
-    @patch('planproof.aoai.AzureOpenAI')
+    @patch('openai.AzureOpenAI')
     def test_chat_completion_success(self, mock_openai_class):
         """Test successful chat completion."""
         mock_response = Mock()
@@ -372,7 +372,7 @@ class TestAzureOpenAIClient:
         """Test extracting specific field from context - skipping as method doesn't exist."""
         pytest.skip("extract_field method not implemented in aoai.py")
     
-    @patch('planproof.aoai.AzureOpenAI')
+    @patch('openai.AzureOpenAI')
     def test_resolve_conflicts(self, mock_openai_class):
         """Test resolving conflicts between values."""
         mock_response = Mock()
