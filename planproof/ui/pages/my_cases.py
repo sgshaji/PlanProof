@@ -10,13 +10,27 @@ from planproof.ui.ui_components import render_status_badge, render_version_badge
 from datetime import datetime
 
 
-def get_all_cases() -> List[Dict[str, Any]]:
-    """Fetch all applications with their latest submissions."""
+def get_all_cases(page: int = 1, page_size: int = 20) -> tuple[List[Dict[str, Any]], int]:
+    """
+    Fetch all applications with their latest submissions.
+
+    Args:
+        page: Page number (1-indexed)
+        page_size: Number of cases per page
+
+    Returns:
+        tuple: (list of cases, total count)
+    """
     db = Database()
     session = db.get_session()
-    
+
     try:
-        applications = session.query(Application).order_by(Application.created_at.desc()).all()
+        query = session.query(Application).order_by(Application.created_at.desc())
+        total_count = query.count()
+
+        # Apply pagination
+        offset = (page - 1) * page_size
+        applications = query.limit(page_size).offset(offset).all()
         
         cases = []
         for app in applications:
@@ -63,6 +77,14 @@ def get_all_cases() -> List[Dict[str, Any]]:
             else:
                 status = "Processing"
             
+            # Get latest run_id for this submission
+            from planproof.db import Run
+            latest_run = session.query(Run).filter(
+                Run.application_id == app.id
+            ).order_by(Run.created_at.desc()).first()
+
+            run_id = latest_run.id if latest_run else None
+
             # Count changes if modification
             changes_count = {"fields": 0, "documents": 0}
             if is_modification:
@@ -93,21 +115,29 @@ def get_all_cases() -> List[Dict[str, Any]]:
                 'warnings': warnings,
                 'is_modification': is_modification,
                 'changes_count': changes_count,
-                'submission_id': latest_submission.id
+                'submission_id': latest_submission.id,
+                'run_id': run_id  # Add run_id to case data
             })
-        
-        return cases
-    
+
+
+        return cases, total_count
+
     finally:
         session.close()
 
 
 def render():
     """Render the My Cases page."""
-    
+
+    # Initialize pagination
+    if "cases_page" not in st.session_state:
+        st.session_state.cases_page = 1
+    if "cases_status_filter" not in st.session_state:
+        st.session_state.cases_status_filter = "all"
+
     # Search and filters
-    col1, col2 = st.columns([4, 1])
-    
+    col1, col2, col3 = st.columns([3, 1, 1])
+
     with col1:
         search_query = st.text_input(
             "Search",
@@ -115,16 +145,27 @@ def render():
             label_visibility="collapsed",
             key="case_search"
         )
-    
+
     with col2:
-        if st.button("🔽 Filters", use_container_width=True):
-            st.info("Filter functionality coming soon!")
-    
+        status_filter = st.selectbox(
+            "Status",
+            options=["all", "Complete", "Issues Found", "In Review", "Processing"],
+            key="case_status_filter_select"
+        )
+
+    with col3:
+        sort_by = st.selectbox(
+            "Sort By",
+            options=["Date (Newest)", "Date (Oldest)", "Reference A-Z", "Reference Z-A"],
+            key="case_sort"
+        )
+
     st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
-    
-    # Fetch cases
+
+    # Fetch cases with pagination
+    page_size = 20
     with st.spinner("Loading cases..."):
-        cases = get_all_cases()
+        cases, total_count = get_all_cases(page=st.session_state.cases_page, page_size=page_size)
     
     if not cases:
         st.markdown("""
@@ -149,6 +190,20 @@ def render():
             if search_query.lower() in c['ref'].lower()
             or search_query.lower() in c['applicant'].lower()
         ]
+
+    # Filter by status
+    if status_filter != "all":
+        cases = [c for c in cases if c['status'] == status_filter]
+
+    # Apply sorting
+    if sort_by == "Date (Newest)":
+        cases.sort(key=lambda x: x['date'], reverse=True)
+    elif sort_by == "Date (Oldest)":
+        cases.sort(key=lambda x: x['date'])
+    elif sort_by == "Reference A-Z":
+        cases.sort(key=lambda x: x['ref'])
+    elif sort_by == "Reference Z-A":
+        cases.sort(key=lambda x: x['ref'], reverse=True)
     
     # Display cases using native Streamlit components
     for case in cases:
@@ -209,14 +264,25 @@ def render():
                 if case['is_modification']:
                     total_changes = case['changes_count']['fields'] + case['changes_count']['documents']
                     info_parts.append(f"🔄 {total_changes} changes")
-                
+
+                # Add run ID
+                if case.get('run_id'):
+                    info_parts.append(f"🔢 Run #{case['run_id']}")
+
                 st.markdown(" | ".join(info_parts))
             
             with col_actions:
-                if st.button("View Details", key=f"view_{case['id']}", use_container_width=True):
-                    st.session_state.selected_case = case
-                    st.session_state.show_case_details = True
-                    st.rerun()
+                # View Results button (navigates to Results tab with run_id)
+                if case.get('run_id'):
+                    if st.button("📋 View Results", key=f"view_{case['id']}", use_container_width=True, type="primary"):
+                        st.session_state.run_id = case['run_id']
+                        st.session_state.current_tab = "Results"
+                        st.rerun()
+                else:
+                    if st.button("View Details", key=f"view_{case['id']}", use_container_width=True):
+                        st.session_state.selected_case = case
+                        st.session_state.show_case_details = True
+                        st.rerun()
                 
                 # Show "Submit Revision" button for V0 cases with issues
                 if case['version'] == 'V0' and case['issues'] > 0:
@@ -226,11 +292,37 @@ def render():
                         st.rerun()
             
             st.markdown("---")
-    
+
+    # Pagination controls
+    total_pages = (total_count + page_size - 1) // page_size
+
+    if total_pages > 1:
+        st.markdown("### 📄 Pagination")
+
+        col_prev, col_info, col_next = st.columns([1, 2, 1])
+
+        with col_prev:
+            if st.button("← Previous", disabled=st.session_state.cases_page == 1, use_container_width=True):
+                st.session_state.cases_page -= 1
+                st.rerun()
+
+        with col_info:
+            st.markdown(
+                f"<div style='text-align: center; padding: 8px;'>"
+                f"Page {st.session_state.cases_page} of {total_pages} (Total: {total_count} cases)"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+
+        with col_next:
+            if st.button("Next →", disabled=st.session_state.cases_page >= total_pages, use_container_width=True):
+                st.session_state.cases_page += 1
+                st.rerun()
+
     # Show case details modal
     if st.session_state.get('show_case_details'):
         render_case_details(st.session_state.selected_case)
-    
+
     # Show revision form modal
     if st.session_state.get('show_revision_form'):
         render_revision_form(st.session_state.revision_parent_case)

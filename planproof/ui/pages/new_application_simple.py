@@ -154,10 +154,44 @@ def render():
     
     # Form validation and submission
     if submit_button:
+        # Validation checks
+        errors = []
+
         if not app_ref:
-            st.error("❌ Application Reference is required")
-        elif not uploaded_files:
-            st.error("❌ Please upload at least one PDF document")
+            errors.append("Application Reference is required")
+
+        if not uploaded_files:
+            errors.append("Please upload at least one PDF document")
+        else:
+            # File size validation (max 100MB per file)
+            MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB in bytes
+            for file in uploaded_files:
+                if file.size > MAX_FILE_SIZE:
+                    errors.append(f"File '{file.name}' is too large ({file.size / 1024 / 1024:.1f}MB). Maximum size is 100MB")
+
+            # File count validation (max 20 files)
+            MAX_FILES = 20
+            if len(uploaded_files) > MAX_FILES:
+                errors.append(f"Too many files. Maximum is {MAX_FILES} files, you uploaded {len(uploaded_files)}")
+
+            # Check for duplicate filenames
+            filenames = [f.name for f in uploaded_files]
+            duplicates = [name for name in filenames if filenames.count(name) > 1]
+            if duplicates:
+                errors.append(f"Duplicate filenames found: {', '.join(set(duplicates))}")
+
+        # Check for duplicate application reference
+        if app_ref:
+            from planproof.db import Database
+            db = Database()
+            existing_app = db.get_application_by_ref(app_ref)
+            if existing_app:
+                st.warning(f"⚠️ Application '{app_ref}' already exists. This will create a new revision.")
+
+        # Show errors if any
+        if errors:
+            for error in errors:
+                st.error(f"❌ {error}")
         else:
             # Start processing
             with st.spinner("Starting validation..."):

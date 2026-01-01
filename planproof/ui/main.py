@@ -17,10 +17,15 @@ if str(project_root) not in sys.path:
 
 import streamlit as st
 from planproof.db import Database
+from planproof.ui.auth import check_authentication, show_login_page, logout, get_current_username
 
 
 def main() -> None:
     """Run the main PlanProof Streamlit UI."""
+    # Check authentication first
+    if not check_authentication():
+        show_login_page()
+        return
     st.set_page_config(
         page_title="PlanProof - Planning Validation System",
         page_icon="📋",
@@ -91,33 +96,42 @@ def main() -> None:
     st.session_state.setdefault("processing_status", None)
     st.session_state.setdefault("processing", False)
 
-    st.markdown(
-        """
-    <div class="main-header">
-        <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="
-                width: 36px;
-                height: 36px;
-                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            ">
-                <span style="color: white; font-size: 20px;">📋</span>
-            </div>
-            <h1 style="margin: 0; font-size: 1.5rem; font-weight: bold; color: #111827;">PlanProof</h1>
-            <span style="margin-left: auto; color: #6b7280; font-size: 14px;">👤 Planning Officer</span>
-        </div>
-    </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    # Header with user info and logout
+    header_col1, header_col2 = st.columns([4, 1])
 
-    tabs = st.tabs(["📤 New Application", "📋 My Cases", "📊 Reports"])
-    if not isinstance(tabs, (list, tuple)) or len(tabs) != 3:
-        tabs = [st.container(), st.container(), st.container()]
-    tab1, tab2, tab3 = tabs
+    with header_col1:
+        st.markdown(
+            f"""
+        <div class="main-header">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="
+                    width: 36px;
+                    height: 36px;
+                    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                    border-radius: 8px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                ">
+                    <span style="color: white; font-size: 20px;">📋</span>
+                </div>
+                <h1 style="margin: 0; font-size: 1.5rem; font-weight: bold; color: #111827;">PlanProof</h1>
+                <span style="margin-left: auto; color: #6b7280; font-size: 14px;">👤 {get_current_username() or 'Planning Officer'}</span>
+            </div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with header_col2:
+        st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
+        if st.button("🚪 Logout", use_container_width=True):
+            logout()
+
+    tabs = st.tabs(["📤 New Application", "📋 My Cases", "🔍 All Runs", "📋 Results", "📊 Reports"])
+    if not isinstance(tabs, (list, tuple)) or len(tabs) != 5:
+        tabs = [st.container(), st.container(), st.container(), st.container(), st.container()]
+    tab1, tab2, tab3, tab4, tab5 = tabs
 
     if hasattr(st, "mock_calls"):
         return
@@ -133,8 +147,15 @@ def main() -> None:
         my_cases.render()
 
     with tab3:
-        from planproof.ui.pages import reports_dashboard
+        from planproof.ui.pages import all_runs
+        all_runs.render()
 
+    with tab4:
+        from planproof.ui.pages import results
+        results.render()
+
+    with tab5:
+        from planproof.ui.pages import reports_dashboard
         reports_dashboard.render()
 
 
