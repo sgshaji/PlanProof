@@ -10,6 +10,7 @@ from datetime import datetime
 from planproof.ui.run_orchestrator import get_run_results
 from planproof.ui.components.document_viewer import render_document_viewer, check_pdf_library
 from planproof.services.officer_override import create_override, get_override_history
+from planproof.db import Database
 
 # Enhanced issue display components
 try:
@@ -458,29 +459,32 @@ def render():
     # Request Info section
     st.markdown("---")
     st.markdown("### 🚨 Request More Information")
-    
+
+    # Initialize db here
+    db = Database()
+
     # Show active requests first
     try:
         from planproof.services.request_info_service import get_active_requests
         from planproof.db import Submission, Run
-        
+
         # Get submission ID from run
-        db_check = Database()
-        session_check = db_check.get_session()
-        run = session_check.query(Run).filter(Run.id == run_id).first()
-        submission_id = None
-        
-        if run and run.application_id:
-            submission = session_check.query(Submission).filter(
-                Submission.planning_case_id == run.application_id
-            ).order_by(Submission.created_at.desc()).first()
-            if submission:
-                submission_id = submission.id
-        
-        session_check.close()
-        
+        session_check = db.get_session()
+        try:
+            run = session_check.query(Run).filter(Run.id == run_id).first()
+            submission_id = None
+
+            if run and run.application_id:
+                submission = session_check.query(Submission).filter(
+                    Submission.planning_case_id == run.application_id
+                ).order_by(Submission.created_at.desc()).first()
+                if submission:
+                    submission_id = submission.id
+        finally:
+            session_check.close()
+
         if submission_id:
-            active_requests = get_active_requests(submission_id, db_check)
+            active_requests = get_active_requests(submission_id, db)
             
             if active_requests:
                 st.warning(f"⚠️ {len(active_requests)} active information request(s)")
@@ -565,7 +569,7 @@ def render():
                                 missing_items=missing_items,
                                 notes=request_info_notes or "No additional notes",
                                 officer_name=officer_name,
-                                db=db_check
+                                db=db
                             )
                             
                             if result.get("success"):
