@@ -11,6 +11,312 @@ from planproof.ui.run_orchestrator import get_run_results
 from planproof.ui.components.document_viewer import render_document_viewer, check_pdf_library
 from planproof.services.officer_override import create_override, get_override_history
 
+# Enhanced issue display components
+try:
+    from planproof.ui.components.enhanced_issue_card import (
+        render_enhanced_issue_card,
+        render_bulk_action_panel,
+        render_resolution_tracker
+    )
+    from planproof.ui.components.issue_converter import convert_all_findings
+    ENHANCED_ISSUES_AVAILABLE = True
+except ImportError as e:
+    ENHANCED_ISSUES_AVAILABLE = False
+    print(f"Enhanced issue components not available: {e}")
+
+
+def _render_enhanced_issues_view(findings: list, run_id: int) -> None:
+    """Render findings using enhanced issue cards."""
+    try:
+        # Convert findings to enhanced issues
+        enhanced_issues = convert_all_findings(findings, run_id)
+        
+        if not enhanced_issues:
+            st.info("No issues to display.")
+            return
+        
+        # Show resolution tracker
+        render_resolution_tracker(enhanced_issues)
+        
+        st.markdown("---")
+        
+        # Auto-recheck button
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            st.markdown("### 🔄 Auto-Recheck")
+            st.caption("Check if any issues can be resolved based on actions taken")
+        
+        with col2:
+            from planproof.services.resolution_service import AutoRecheckEngine
+            
+            if st.button("🔄 Run Recheck", key=f"recheck_btn_{run_id}", type="primary"):
+                with st.spinner("Rechecking issues..."):
+                    engine = AutoRecheckEngine(run_id)
+                    result = engine.trigger_recheck()
+                    
+                    if result.get("success"):
+                        st.success(f"✅ Rechecked {result['issues_checked']} issue(s)")
+                        
+                        if result.get("results"):
+                            for res in result["results"]:
+                                if res["status"] == "resolved":
+                                    st.success(f"✅ {res['issue_id']}: {res['message']}")
+                                else:
+                                    st.info(f"ℹ️ {res['issue_id']}: {res['message']}")
+                        
+                        st.info("Refresh page to see updated statuses")
+                    else:
+                        st.error("Recheck failed")
+        
+        st.markdown("---")
+        
+        # Show bulk action panel for multi-document issues
+        upload_issues = [i for i in enhanced_issues 
+                        if i.actions and any(a.action_type.value == "upload_document" 
+                                           for a in i.actions.items)]
+        if len(upload_issues) > 1:
+            render_bulk_action_panel(upload_issues)
+            st.markdown("---")
+        
+        # Filter options
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            severity_filter = st.selectbox(
+                "Filter by Severity",
+                ["All", "Blocker", "Critical", "Warning", "Info"],
+                index=0,
+                key=f"enhanced_severity_filter_{run_id}"
+            )
+        
+        with col2:
+            status_filter = st.selectbox(
+                "Filter by Status",
+                ["All", "Open", "In Progress", "Awaiting Verification", "Resolved", "Dismissed"],
+                index=0,
+                key=f"enhanced_status_filter_{run_id}"
+            )
+        
+        with col3:
+            category_filter = st.selectbox(
+                "Filter by Category",
+                ["All", "Missing Document", "Data Quality", "Data Conflict", "Completeness", 
+                 "Policy Compliance", "Technical Requirement", "Other"],
+                index=0,
+                key=f"enhanced_category_filter_{run_id}"
+            )
+        
+        # Apply filters
+        filtered_issues = enhanced_issues
+        
+        if severity_filter != "All":
+            filtered_issues = [i for i in filtered_issues 
+                             if i.severity.value.title() == severity_filter]
+        
+        if status_filter != "All":
+            filtered_issues = [i for i in filtered_issues 
+                             if i.resolution and i.resolution.status.value.replace('_', ' ').title() == status_filter]
+        
+        if category_filter != "All":
+            filtered_issues = [i for i in filtered_issues 
+                             if i.category.value.replace('_', ' ').title() == category_filter]
+        
+        # Show count
+        st.info(f"Showing {len(filtered_issues)} of {len(enhanced_issues)} issues")
+        
+        # Render issue cards
+        for issue in filtered_issues:
+            render_enhanced_issue_card(issue, run_id)
+    
+    except Exception as e:
+        st.error(f"Error rendering enhanced issues: {str(e)}")
+        st.exception(e)
+        st.info("Falling back to legacy display...")
+        _render_legacy_findings_view(findings, run_id, True)
+
+
+def _render_legacy_findings_view(findings: list, run_id: int, pdf_available: bool = True) -> None:
+    """Render findings using the original legacy display."""
+    # Filter options
+    col1, col2 = st.columns(2)
+    with col1:
+        status_filter = st.selectbox(
+            "Filter by Status",
+            ["All", "pass", "needs_review", "fail"],
+            index=0
+        )
+    
+    with col2:
+        severity_filter = st.selectbox(
+            "Filter by Severity",
+            ["All", "error", "warning"],
+            index=0
+        )
+    
+    # Apply filters
+    filtered_findings = findings
+    if status_filter != "All":
+        filtered_findings = [f for f in filtered_findings if f.get("status") == status_filter]
+    if severity_filter != "All":
+        filtered_findings = [f for f in filtered_findings if f.get("severity") == severity_filter]
+    
+    # Display findings
+    for idx, finding in enumerate(filtered_findings):
+        # Check for existing overrides
+        finding_key = f"{finding.get('rule_id')}_{finding.get('document_id')}"
+        override_history = st.session_state.get(f"override_history_{finding_key}", [])
+        
+        # Determine display status (show override if exists)
+        display_status = finding.get('status', 'unknown')
+        if override_history:
+            latest_override = override_history[0]
+            display_status = f"{latest_override['override_status']} (OVERRIDDEN)"
+        
+        with st.expander(
+            f"{finding.get('rule_id', 'Unknown')} - {display_status.upper()} "
+            f"({finding.get('document_name', 'unknown')})"
+        ):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown(f"**Rule ID:** {finding.get('rule_id', 'N/A')}")
+                st.markdown(f"**Status:** {finding.get('status', 'N/A')}")
+                st.markdown(f"**Severity:** {finding.get('severity', 'N/A')}")
+                st.markdown(f"**Document:** {finding.get('document_name', 'N/A')}")
+            
+            with col2:
+                st.markdown(f"**Message:** {finding.get('message', 'N/A')}")
+                if finding.get('missing_fields'):
+                    st.markdown(f"**Missing Fields:** {', '.join(finding['missing_fields'])}")
+            
+            # Override section
+            st.markdown("---")
+            st.markdown("### Officer Override")
+            
+            # Show existing overrides
+            if override_history:
+                with st.expander(f"📋 Override History ({len(override_history)} override(s))"):
+                    for override in override_history:
+                        st.markdown(f"**Override by:** {override['officer_id']}")
+                        st.markdown(f"**Original:** {override['original_status']} → **Override:** {override['override_status']}")
+                        st.markdown(f"**Notes:** {override['notes']}")
+                        st.markdown(f"**Date:** {override['created_at']}")
+                        st.markdown("---")
+            
+            # Override form
+            override_col1, override_col2, override_col3 = st.columns([2, 2, 1])
+            
+            with override_col1:
+                override_status = st.selectbox(
+                    "Override Status",
+                    ["pass", "fail", "needs_review"],
+                    key=f"override_status_{finding_key}_{idx}",
+                    help="Select the override status"
+                )
+            
+            with override_col2:
+                officer_id = st.text_input(
+                    "Officer ID",
+                    key=f"officer_id_{finding_key}_{idx}",
+                    placeholder="Enter your officer ID",
+                    help="Your user identifier"
+                )
+            
+            override_notes = st.text_area(
+                "Override Notes (Required)",
+                key=f"override_notes_{finding_key}_{idx}",
+                placeholder="Explain why you are overriding this result...",
+                help="Mandatory explanation for the override"
+            )
+            
+            with override_col3:
+                if st.button(
+                    "✓ Override",
+                    key=f"override_btn_{finding_key}_{idx}",
+                    type="primary"
+                ):
+                    if not override_notes or not override_notes.strip():
+                        st.error("Override notes are required")
+                    elif not officer_id or not officer_id.strip():
+                        st.error("Officer ID is required")
+                    else:
+                        try:
+                            # Create override (using validation_result_id if available)
+                            override_id = create_override(
+                                validation_result_id=None,  # Would need to get from finding
+                                validation_check_id=None,  # Would need to get from finding
+                                original_status=finding.get('status', 'unknown'),
+                                override_status=override_status,
+                                notes=override_notes.strip(),
+                                officer_id=officer_id.strip(),
+                                run_id=run_id
+                            )
+                            
+                            st.success(f"Override created successfully! ID: {override_id}")
+                            
+                            # Refresh override history
+                            # Note: In production, this would query the database
+                            st.session_state[f"override_history_{finding_key}"] = [{
+                                "override_id": override_id,
+                                "original_status": finding.get('status'),
+                                "override_status": override_status,
+                                "notes": override_notes.strip(),
+                                "officer_id": officer_id.strip(),
+                                "created_at": datetime.now().isoformat()
+                            }] + override_history
+                            
+                            st.rerun()
+                        
+                        except Exception as e:
+                            st.error(f"Error creating override: {str(e)}")
+            
+            # Evidence section
+            evidence_enhanced = finding.get("evidence_enhanced", [])
+            evidence = finding.get("evidence", {})
+            
+            if evidence_enhanced or evidence:
+                st.markdown("**Evidence:**")
+                
+                # Use enhanced evidence if available
+                if evidence_enhanced:
+                    for idx, ev in enumerate(evidence_enhanced[:5]):  # Show top 5
+                        page = ev.get("page", "?")
+                        snippet = ev.get("snippet", "")
+                        document_path = ev.get("document_path")
+                        document_id = ev.get("document_id")
+                        bbox = ev.get("bbox")
+                        
+                        col_ev1, col_ev2 = st.columns([4, 1])
+                        
+                        with col_ev1:
+                            st.code(f"Page {page}: {snippet}", language="text")
+                        
+                        with col_ev2:
+                            if pdf_available and document_path and Path(document_path).exists():
+                                if st.button(
+                                    "📄 View",
+                                    key=f"view_evidence_{finding.get('rule_id')}_{document_id}_{page}_{idx}",
+                                    help="Open document at this evidence location"
+                                ):
+                                    # Store viewer state
+                                    st.session_state["show_viewer"] = True
+                                    st.session_state["viewer_document_path"] = document_path
+                                    st.session_state["viewer_document_id"] = document_id
+                                    st.session_state["viewer_page"] = page
+                                    st.session_state["viewer_bbox"] = bbox
+                                    st.rerun()
+                else:
+                    # Fallback to old evidence format
+                    evidence_snippets = evidence.get("evidence_snippets", [])
+                    if evidence_snippets:
+                        for ev in evidence_snippets[:3]:  # Show top 3
+                            page = ev.get("page", "?")
+                            snippet = ev.get("snippet", "")
+                            st.code(f"Page {page}: {snippet}", language="text")
+                    else:
+                        st.info("No evidence snippets available")
+
 
 def _render_document_viewer_section():
     """Render the document viewer in a dedicated section."""
@@ -39,6 +345,17 @@ def _render_document_viewer_section():
 def render():
     """Render the results page."""
     st.title("📋 Validation Results")
+    
+    # Enhanced Issues toggle (only show if available)
+    if ENHANCED_ISSUES_AVAILABLE:
+        use_enhanced = st.toggle(
+            "🎯 Enhanced Issue Display",
+            value=st.session_state.get("use_enhanced_issues", False),
+            help="Show issues with actionable guidance and resolution tracking"
+        )
+        st.session_state["use_enhanced_issues"] = use_enhanced
+    else:
+        use_enhanced = False
     
     # Check PDF library availability
     pdf_available, pdf_library = check_pdf_library()
@@ -121,185 +438,12 @@ def render():
     
     if not findings:
         st.info("No validation findings available.")
+    elif use_enhanced and ENHANCED_ISSUES_AVAILABLE:
+        # ENHANCED ISSUE DISPLAY
+        _render_enhanced_issues_view(findings, run_id)
     else:
-        # Filter options
-        col1, col2 = st.columns(2)
-        with col1:
-            status_filter = st.selectbox(
-                "Filter by Status",
-                ["All", "pass", "needs_review", "fail"],
-                index=0
-            )
-        
-        with col2:
-            severity_filter = st.selectbox(
-                "Filter by Severity",
-                ["All", "error", "warning"],
-                index=0
-            )
-        
-        # Apply filters
-        filtered_findings = findings
-        if status_filter != "All":
-            filtered_findings = [f for f in filtered_findings if f.get("status") == status_filter]
-        if severity_filter != "All":
-            filtered_findings = [f for f in filtered_findings if f.get("severity") == severity_filter]
-        
-        # Display findings
-        for idx, finding in enumerate(filtered_findings):
-            # Check for existing overrides
-            finding_key = f"{finding.get('rule_id')}_{finding.get('document_id')}"
-            override_history = st.session_state.get(f"override_history_{finding_key}", [])
-            
-            # Determine display status (show override if exists)
-            display_status = finding.get('status', 'unknown')
-            if override_history:
-                latest_override = override_history[0]
-                display_status = f"{latest_override['override_status']} (OVERRIDDEN)"
-            
-            with st.expander(
-                f"{finding.get('rule_id', 'Unknown')} - {display_status.upper()} "
-                f"({finding.get('document_name', 'unknown')})"
-            ):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"**Rule ID:** {finding.get('rule_id', 'N/A')}")
-                    st.markdown(f"**Status:** {finding.get('status', 'N/A')}")
-                    st.markdown(f"**Severity:** {finding.get('severity', 'N/A')}")
-                    st.markdown(f"**Document:** {finding.get('document_name', 'N/A')}")
-                
-                with col2:
-                    st.markdown(f"**Message:** {finding.get('message', 'N/A')}")
-                    if finding.get('missing_fields'):
-                        st.markdown(f"**Missing Fields:** {', '.join(finding['missing_fields'])}")
-                
-                # Override section
-                st.markdown("---")
-                st.markdown("### Officer Override")
-                
-                # Show existing overrides
-                if override_history:
-                    with st.expander(f"📋 Override History ({len(override_history)} override(s))"):
-                        for override in override_history:
-                            st.markdown(f"**Override by:** {override['officer_id']}")
-                            st.markdown(f"**Original:** {override['original_status']} → **Override:** {override['override_status']}")
-                            st.markdown(f"**Notes:** {override['notes']}")
-                            st.markdown(f"**Date:** {override['created_at']}")
-                            st.markdown("---")
-                
-                # Override form
-                override_col1, override_col2, override_col3 = st.columns([2, 2, 1])
-                
-                with override_col1:
-                    override_status = st.selectbox(
-                        "Override Status",
-                        ["pass", "fail", "needs_review"],
-                        key=f"override_status_{finding_key}_{idx}",
-                        help="Select the override status"
-                    )
-                
-                with override_col2:
-                    officer_id = st.text_input(
-                        "Officer ID",
-                        key=f"officer_id_{finding_key}_{idx}",
-                        placeholder="Enter your officer ID",
-                        help="Your user identifier"
-                    )
-                
-                override_notes = st.text_area(
-                    "Override Notes (Required)",
-                    key=f"override_notes_{finding_key}_{idx}",
-                    placeholder="Explain why you are overriding this result...",
-                    help="Mandatory explanation for the override"
-                )
-                
-                with override_col3:
-                    if st.button(
-                        "✓ Override",
-                        key=f"override_btn_{finding_key}_{idx}",
-                        type="primary"
-                    ):
-                        if not override_notes or not override_notes.strip():
-                            st.error("Override notes are required")
-                        elif not officer_id or not officer_id.strip():
-                            st.error("Officer ID is required")
-                        else:
-                            try:
-                                # Create override (using validation_result_id if available)
-                                override_id = create_override(
-                                    validation_result_id=None,  # Would need to get from finding
-                                    validation_check_id=None,  # Would need to get from finding
-                                    original_status=finding.get('status', 'unknown'),
-                                    override_status=override_status,
-                                    notes=override_notes.strip(),
-                                    officer_id=officer_id.strip(),
-                                    run_id=run_id
-                                )
-                                
-                                st.success(f"Override created successfully! ID: {override_id}")
-                                
-                                # Refresh override history
-                                # Note: In production, this would query the database
-                                st.session_state[f"override_history_{finding_key}"] = [{
-                                    "override_id": override_id,
-                                    "original_status": finding.get('status'),
-                                    "override_status": override_status,
-                                    "notes": override_notes.strip(),
-                                    "officer_id": officer_id.strip(),
-                                    "created_at": datetime.now().isoformat()
-                                }] + override_history
-                                
-                                st.rerun()
-                            
-                            except Exception as e:
-                                st.error(f"Error creating override: {str(e)}")
-                
-                # Evidence section
-                evidence_enhanced = finding.get("evidence_enhanced", [])
-                evidence = finding.get("evidence", {})
-                
-                if evidence_enhanced or evidence:
-                    st.markdown("**Evidence:**")
-                    
-                    # Use enhanced evidence if available
-                    if evidence_enhanced:
-                        for idx, ev in enumerate(evidence_enhanced[:5]):  # Show top 5
-                            page = ev.get("page", "?")
-                            snippet = ev.get("snippet", "")
-                            document_path = ev.get("document_path")
-                            document_id = ev.get("document_id")
-                            bbox = ev.get("bbox")
-                            
-                            col_ev1, col_ev2 = st.columns([4, 1])
-                            
-                            with col_ev1:
-                                st.code(f"Page {page}: {snippet}", language="text")
-                            
-                            with col_ev2:
-                                if pdf_available and document_path and Path(document_path).exists():
-                                    if st.button(
-                                        "📄 View",
-                                        key=f"view_evidence_{finding.get('rule_id')}_{document_id}_{page}_{idx}",
-                                        help="Open document at this evidence location"
-                                    ):
-                                        # Store viewer state
-                                        st.session_state["show_viewer"] = True
-                                        st.session_state["viewer_document_path"] = document_path
-                                        st.session_state["viewer_document_id"] = document_id
-                                        st.session_state["viewer_page"] = page
-                                        st.session_state["viewer_bbox"] = bbox
-                                        st.rerun()
-                    else:
-                        # Fallback to old evidence format
-                        evidence_snippets = evidence.get("evidence_snippets", [])
-                        if evidence_snippets:
-                            for ev in evidence_snippets[:3]:  # Show top 3
-                                page = ev.get("page", "?")
-                                snippet = ev.get("snippet", "")
-                                st.code(f"Page {page}: {snippet}", language="text")
-                        else:
-                            st.info("No evidence snippets available")
+        # LEGACY DISPLAY
+        _render_legacy_findings_view(findings, run_id, pdf_available)
     
     # Errors section
     errors = results.get("errors", [])

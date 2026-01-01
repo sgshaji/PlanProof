@@ -1171,18 +1171,6 @@ def _dispatch_by_category(
     else:
         LOGGER.warning(f"Unknown rule category: {category} for rule {rule.rule_id}")
         return None
-    elif category == "CONSISTENCY":
-        return _validate_consistency(rule, context)
-    elif category == "MODIFICATION":
-        return _validate_modification(rule, context)
-    elif category == "SPATIAL":
-        return _validate_spatial(rule, context)
-    elif category == "FIELD_REQUIRED":
-        # Default field validation (existing logic)
-        return None  # Will be handled by existing logic
-    else:
-        LOGGER.warning(f"Unknown rule category: {category} for rule {rule.rule_id}")
-        return None
 
 
 def _validate_document_required(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1324,9 +1312,14 @@ def _validate_consistency(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[
                 # Build evidence from all conflicting sources
                 for value, efs in value_groups.items():
                     for ef in efs[:2]:  # Max 2 per value
-                        # Get document info
-                        doc = session.query(Document).filter(Document.id == ef.document_id).first()
-                        doc_name = doc.filename if doc else f"document_{ef.document_id}"
+                        # Get document info through evidence relationship
+                        doc = None
+                        doc_id = None
+                        if ef.evidence_id and ef.evidence:
+                            doc_id = ef.evidence.document_id
+                            doc = ef.evidence.document
+                        
+                        doc_name = doc.filename if doc else "unknown document"
                         doc_type = doc.document_type if doc else "unknown"
                         
                         evidence_snippets.append({
@@ -1334,7 +1327,7 @@ def _validate_consistency(rule: Rule, context: Dict[str, Any]) -> Optional[Dict[
                             "snippet": f"{field_key}='{value}' in {doc_type} ({doc_name})",
                             "field_key": field_key,
                             "field_value": value,
-                            "document_id": ef.document_id,
+                            "document_id": doc_id,
                             "document_type": doc_type
                         })
         
@@ -1923,12 +1916,9 @@ def validate_extraction(
                         check = ValidationCheck(
                             document_id=document_id,
                             submission_id=submission_id,
-                            rule_id=rule.rule_id,
-                            rule_category=rule.rule_category,
+                            rule_id_string=rule.rule_id,
                             status=ValidationStatus(category_finding.get("status", "needs_review")),
-                            severity=rule.severity,
-                            message=category_finding.get("message", ""),
-                            evidence_summary=category_finding.get("evidence", {})
+                            explanation=category_finding.get("message", "")
                         )
                         session.add(check)
                 continue  # Skip default field validation for category-specific rules

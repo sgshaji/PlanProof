@@ -1,0 +1,54 @@
+{
+  "// INSTRUCTIONS": "Copy this file to settings.json and update with your credentials",
+  
+  "vscode-postgres.connections": {
+    "planproof-azure": {
+      "host": "planproof-dev-pgflex-8016.postgres.database.azure.com",
+      "port": 5432,
+      "user": "pgadmin",
+      "password": "YOUR_PASSWORD_HERE",
+      "database": "planning_validation",
+      "ssl": true,
+      "sslmode": "require"
+    }
+  },
+  "pgsql.connections": [
+    {
+      "host": "planproof-dev-pgflex-8016.postgres.database.azure.com",
+      "port": 5432,
+      "user": "pgadmin",
+      "password": "YOUR_PASSWORD_HERE",
+      "database": "planning_validation",
+      "ssl": true,
+      "connectionName": "PlanProof Azure PostgreSQL"
+    }
+  ],
+  
+  "// Python Settings": "Recommended Python configuration",
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.formatting.provider": "black",
+  "python.linting.enabled": true,
+  "python.linting.pylintEnabled": false,
+  "python.linting.ruffEnabled": true,
+  
+  "// Editor Settings": "General editor preferences",
+  "editor.formatOnSave": true,
+  "editor.rulers": [88, 120],
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true
+  },
+  
+  "// Terminal Settings": "Terminal configuration",
+  "terminal.integrated.defaultProfile.windows": "PowerShell",
+  "terminal.integrated.env.windows": {
+    "PYTHONPATH": "${workspaceFolder}"
+  }
+}

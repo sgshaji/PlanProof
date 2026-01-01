@@ -68,12 +68,47 @@ def render():
                 if current_file:
                     st.markdown(f"**Current file:** {current_file}")
             
-            # Error information
+            # Show summary if available
+            if state in ["completed", "completed_with_errors", "failed"]:
+                from pathlib import Path
+                import json
+                
+                summary_file = Path(f"./runs/{run_id}/outputs/summary.json")
+                if summary_file.exists():
+                    try:
+                        with open(summary_file, 'r', encoding='utf-8') as f:
+                            summary = json.load(f)
+                        
+                        # Display summary
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Documents", summary.get("summary", {}).get("total_documents", 0))
+                        with col2:
+                            st.metric("Processed", summary.get("summary", {}).get("processed", 0))
+                        with col3:
+                            st.metric("Errors", summary.get("summary", {}).get("errors", 0))
+                        with col4:
+                            st.metric("LLM Calls", summary.get("llm_calls_per_run", 0))
+                        
+                        # Show errors if any
+                        if summary.get("errors"):
+                            st.error(f"**{len(summary['errors'])} Error(s) Occurred:**")
+                            for err in summary["errors"]:
+                                with st.expander(f"❌ {err.get('filename', 'Unknown file')} - {err.get('step', 'unknown step')}"):
+                                    st.markdown(f"**Error Type:** `{err.get('error_type', 'Unknown')}`")
+                                    st.markdown(f"**Step:** {err.get('step', 'unknown')}")
+                                    st.markdown(f"**Message:** {err.get('error', 'No message')}")
+                                    if err.get('traceback'):
+                                        st.code(err['traceback'], language='python')
+                    except Exception as e:
+                        st.warning(f"Could not load summary: {e}")
+            
+            # Error information from database
             if status.get("error"):
                 st.error(f"**Error:** {status.get('error')}")
                 
                 if status.get("traceback"):
-                    with st.expander("View Error Details"):
+                    with st.expander("View Full Error Details"):
                         st.code(status.get("traceback"), language="text")
                     
                     # Download logs button
@@ -89,8 +124,24 @@ def render():
                 st.session_state.run_id = run_id
                 st.session_state.stage = "results"
                 
-                if st.button("📋 View Results"):
-                    st.rerun()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("📋 View Results", use_container_width=True):
+                        st.rerun()
+                with col2:
+                    # Download summary button
+                    from pathlib import Path
+                    summary_file = Path(f"./runs/{run_id}/outputs/summary.json")
+                    if summary_file.exists():
+                        with open(summary_file, 'r', encoding='utf-8') as f:
+                            summary_content = f.read()
+                        st.download_button(
+                            "📥 Download Summary",
+                            data=summary_content,
+                            file_name=f"run_{run_id}_summary.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
     
     # Initial status fetch
     update_status()

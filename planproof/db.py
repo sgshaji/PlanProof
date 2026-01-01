@@ -800,6 +800,245 @@ class Database:
         finally:
             session.close()
 
+
+class IssueResolution(Base):
+    """Track resolution of validation issues."""
+    __tablename__ = "issue_resolutions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=False, index=True)
+    issue_id = Column(String(255), nullable=False, index=True)
+    rule_id = Column(String(255), nullable=False)
+    status = Column(String(50), nullable=False)  # open, in_progress, awaiting_verification, resolved, dismissed
+    severity = Column(String(50))
+    category = Column(String(100))
+    recheck_pending = Column(Integer, default=0)  # Boolean as integer
+    last_action_at = Column(DateTime(timezone=True))
+    last_recheck_at = Column(DateTime(timezone=True))
+    resolved_at = Column(DateTime(timezone=True))
+    dismissed_at = Column(DateTime(timezone=True))
+    dismissed_by = Column(String(255))
+    dismissal_reason = Column(Text)
+    metadata_json = Column(JSON)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    
+    # Relationships
+    run = relationship("Run", back_populates="issue_resolutions")
+    actions = relationship("ResolutionAction", back_populates="issue_resolution", cascade="all, delete-orphan")
+    recheck_history = relationship("RecheckHistory", back_populates="issue_resolution", cascade="all, delete-orphan")
+
+
+class ResolutionAction(Base):
+    """Track actions taken to resolve issues."""
+    __tablename__ = "resolution_actions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    issue_resolution_id = Column(Integer, ForeignKey("issue_resolutions.id"), nullable=False, index=True)
+    action_type = Column(String(50), nullable=False)  # document_upload, option_selection, explanation_provided, dismissed
+    action_data = Column(JSON)  # Store action-specific data
+    performed_by = Column(String(255))
+    performed_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    issue_resolution = relationship("IssueResolution", back_populates="actions")
+
+
+class RecheckHistory(Base):
+    """Track recheck attempts for issues."""
+    __tablename__ = "recheck_history"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=False, index=True)
+    issue_resolution_id = Column(Integer, ForeignKey("issue_resolutions.id"), nullable=False, index=True)
+    rule_id = Column(String(255), nullable=False)
+    previous_status = Column(String(50))
+    new_status = Column(String(50))
+    triggered_by = Column(String(50))  # document_upload, manual, dependency_cascade
+    recheck_result = Column(JSON)
+    rechecked_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    run = relationship("Run", back_populates="recheck_history")
+    issue_resolution = relationship("IssueResolution", back_populates="recheck_history")
+
+
+class IssueDependency(Base):
+    """Track dependencies between issues."""
+    __tablename__ = "issue_dependencies"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=False, index=True)
+    issue_id = Column(String(255), nullable=False, index=True)
+    depends_on_issue_id = Column(String(255), nullable=False)
+    dependency_type = Column(String(50))  # blocking, suggested, informational
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    run = relationship("Run", back_populates="issue_dependencies")
+
+
+# Add relationships to Run model
+Run.issue_resolutions = relationship("IssueResolution", back_populates="run", cascade="all, delete-orphan")
+Run.recheck_history = relationship("RecheckHistory", back_populates="run", cascade="all, delete-orphan")
+Run.issue_dependencies = relationship("IssueDependency", back_populates="run", cascade="all, delete-orphan")
+
+
+class Database:
+    """Database operations class."""
+
+    def __init__(self):
+        settings = get_settings()
+        self.engine = create_engine(settings.database_url, echo=False)
+        self.SessionLocal = sessionmaker(bind=self.engine, autocommit=False, autoflush=False)
+
+    def get_session(self) -> Session:
+        """Get a new database session."""
+        return self.SessionLocal()
+
+    def init_db(self):
+        """Initialize database, creating tables if they don't exist."""
+        Base.metadata.create_all(self.engine)
+
+    def create_application(
+        self,
+        application_ref: str,
+        applicant_name: Optional[str] = None,
+        application_date: Optional[datetime] = None
+    ) -> Application:
+        """Create a new application."""
+        session = self.get_session()
+        try:
+            app = Application(
+                application_ref=application_ref,
+                applicant_name=applicant_name,
+                application_date=application_date
+            )
+            session.add(app)
+            session.commit()
+            session.refresh(app)
+            return app
+        finally:
+            session.close()
+
+    def get_or_create_application(
+        self,
+        application_ref: str,
+        applicant_name: Optional[str] = None,
+        application_date: Optional[datetime] = None
+    ) -> Application:
+        """Get existing application or create new one."""
+        session = self.get_session()
+        try:
+            app = session.query(Application).filter(
+                Application.application_ref == application_ref
+            ).first()
+            
+            if not app:
+                app = Application(
+                    application_ref=application_ref,
+                    applicant_name=applicant_name,
+                    application_date=application_date
+                )
+                session.add(app)
+                session.commit()
+                session.refresh(app)
+            
+            return app
+        finally:
+            session.close()
+
+    def create_submission(
+        self,
+        planning_case_id: int,
+        submission_version: str,
+        parent_submission_id: Optional[int] = None,
+        status: str = "pending",
+        submission_metadata: Optional[Dict] = None
+    ) -> Submission:
+        """Create a new submission."""
+        session = self.get_session()
+        try:
+            submission = Submission(
+                planning_case_id=planning_case_id,
+                submission_version=submission_version,
+                parent_submission_id=parent_submission_id,
+                status=status,
+                submission_metadata=submission_metadata or {}
+            )
+            session.add(submission)
+            session.commit()
+            session.refresh(submission)
+            return submission
+        finally:
+            session.close()
+
+    def create_document(
+        self,
+        blob_uri: str,
+        filename: str,
+        submission_id: Optional[int] = None,
+        application_id: Optional[int] = None,
+        content_hash: Optional[str] = None,
+        document_type: Optional[str] = None
+    ) -> Document:
+        """Create a new document."""
+        session = self.get_session()
+        try:
+            document = Document(
+                blob_uri=blob_uri,
+                filename=filename,
+                submission_id=submission_id,
+                application_id=application_id,
+                content_hash=content_hash,
+                document_type=document_type
+            )
+            session.add(document)
+            session.commit()
+            session.refresh(document)
+            return document
+        finally:
+            session.close()
+
+    def create_run(
+        self,
+        application_id: Optional[int] = None,
+        submission_id: Optional[int] = None,
+        metadata: Optional[Dict] = None
+    ) -> Run:
+        """Create a new run."""
+        session = self.get_session()
+        try:
+            run = Run(
+                application_id=application_id,
+                submission_id=submission_id,
+                metadata=metadata or {}
+            )
+            session.add(run)
+            session.commit()
+            session.refresh(run)
+            return run
+        finally:
+            session.close()
+
+    def update_run_status(
+        self,
+        run_id: int,
+        status: str
+    ) -> Run:
+        """Update run status."""
+        session = self.get_session()
+        try:
+            run = session.query(Run).filter(Run.id == run_id).first()
+            if run:
+                run.status = status
+                run.updated_at = utcnow()
+                session.commit()
+                session.refresh(run)
+            return run
+        finally:
+            session.close()
+
     def create_extracted_fields_bulk(
         self,
         fields: List[ExtractedField],
@@ -862,5 +1101,116 @@ class Database:
                 result[ev.evidence_key] = ev_dict
             
             return result
+        finally:
+            session.close()
+    
+    # Resolution tracking methods
+    
+    def create_issue_resolution(
+        self,
+        run_id: int,
+        issue_id: str,
+        rule_id: str,
+        status: str,
+        severity: Optional[str] = None,
+        category: Optional[str] = None,
+        metadata_json: Optional[Dict] = None
+    ) -> IssueResolution:
+        """Create a new issue resolution record."""
+        session = self.get_session()
+        try:
+            resolution = IssueResolution(
+                run_id=run_id,
+                issue_id=issue_id,
+                rule_id=rule_id,
+                status=status,
+                severity=severity,
+                category=category,
+                metadata_json=metadata_json or {}
+            )
+            session.add(resolution)
+            session.commit()
+            session.refresh(resolution)
+            return resolution
+        finally:
+            session.close()
+    
+    def update_issue_resolution_status(
+        self,
+        issue_resolution_id: int,
+        status: str,
+        **kwargs
+    ) -> IssueResolution:
+        """Update issue resolution status."""
+        session = self.get_session()
+        try:
+            resolution = session.query(IssueResolution).filter(
+                IssueResolution.id == issue_resolution_id
+            ).first()
+            
+            if resolution:
+                resolution.status = status
+                resolution.updated_at = utcnow()
+                
+                for key, value in kwargs.items():
+                    if hasattr(resolution, key):
+                        setattr(resolution, key, value)
+                
+                session.commit()
+                session.refresh(resolution)
+            
+            return resolution
+        finally:
+            session.close()
+    
+    def create_resolution_action(
+        self,
+        issue_resolution_id: int,
+        action_type: str,
+        action_data: Optional[Dict] = None,
+        performed_by: Optional[str] = None
+    ) -> ResolutionAction:
+        """Record a resolution action."""
+        session = self.get_session()
+        try:
+            action = ResolutionAction(
+                issue_resolution_id=issue_resolution_id,
+                action_type=action_type,
+                action_data=action_data or {},
+                performed_by=performed_by
+            )
+            session.add(action)
+            session.commit()
+            session.refresh(action)
+            return action
+        finally:
+            session.close()
+    
+    def create_recheck_history(
+        self,
+        run_id: int,
+        issue_resolution_id: int,
+        rule_id: str,
+        previous_status: Optional[str],
+        new_status: str,
+        triggered_by: str,
+        recheck_result: Optional[Dict] = None
+    ) -> RecheckHistory:
+        """Record a recheck event."""
+        session = self.get_session()
+        try:
+            recheck = RecheckHistory(
+                run_id=run_id,
+                issue_resolution_id=issue_resolution_id,
+                rule_id=rule_id,
+                previous_status=previous_status,
+                new_status=new_status,
+                triggered_by=triggered_by,
+                recheck_result=recheck_result or {}
+            )
+            session.add(recheck)
+            session.commit()
+            session.refresh(recheck)
+            return recheck
         finally:
             session.close()

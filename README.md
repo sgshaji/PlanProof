@@ -2,52 +2,94 @@
 
 <div align="center">
 
-**Enterprise-Grade Planning Application Processing & Validation**
+**🏛️ Enterprise-Grade Planning Application Processing & Validation 🏛️**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Azure](https://img.shields.io/badge/azure-enabled-0078D4.svg)](https://azure.microsoft.com/)
 [![PostgreSQL](https://img.shields.io/badge/postgresql-13+-336791.svg)](https://www.postgresql.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688.svg)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-UI-FF4B4B.svg)](https://streamlit.io/)
+
+**Automate 80%+ of planning validation while maintaining 100% auditability**
+
+[🚀 Quick Start](QUICKSTART.md) • [📖 Documentation](docs/) • [🏗️ Architecture](docs/ARCHITECTURE.md) • [🤝 Contributing](docs/CONTRIBUTING.md)
 
 </div>
 
 ---
 
+## 🎯 Overview
+
+**PlanProof** is a sophisticated AI-powered validation system designed for UK planning authorities to automate the review of planning applications. It combines deterministic rule-based validation with intelligent AI processing to ensure **accuracy**, **auditability**, and **cost-efficiency**.
+
+### 🎪 The Challenge
+
+Planning authorities process **thousands of applications annually**, each requiring:
+- ⏰ Manual extraction of data from complex PDFs  
+- 📋 Validation against 30+ planning regulations  
+- 📝 Evidence-backed decision making with audit trails  
+- 🔄 Version tracking and change detection  
+- 👥 Officer oversight and override capabilities  
+- 💰 Cost-effective processing at scale  
+
+### ✨ The Solution
+
+PlanProof automates **80%+ of the validation process** while maintaining:
+
+| Feature | Benefit |
+|---------|---------|
+| **🎯 100% Auditability** | Every decision linked to source evidence with page references and bounding boxes |
+| **💰 Cost Efficiency** | Deterministic-first approach minimizes AI costs (80% reduction vs. naive LLM-only) |
+| **👥 Human-in-the-Loop** | Officers retain full control with override capabilities and conflict resolution |
+| **🏢 Enterprise Grade** | PostgreSQL + Azure + Docker = scalable, secure, production-ready |
+| **⚡ Fast Setup** | Automated scripts get your team running in 5 minutes |
+| **🔧 Extensible** | Add new validation rules in minutes with simple Python functions |
+
+### 🎬 How It Works
+
+```
+📄 PDFs Upload → 🤖 AI Extraction → ✅ Rule Validation → 👤 Officer Review → ✨ Decision Package
+```
+
+1. **Upload** - Drag & drop PDFs (application forms, site plans, drawings)
+2. **Extract** - Azure Document Intelligence extracts text with layout preservation
+3. **Validate** - 30+ business rules check completeness, consistency, compliance
+4. **Review** - Officers resolve conflicts, override decisions, request info
+5. **Export** - Complete decision package with evidence and audit trail
+
+---
+
 ## 📋 Table of Contents
 
+### 🎯 Getting Started
 - [Overview](#overview)
 - [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Business Rules & Validation](#business-rules--validation)
-- [Use Cases](#use-cases)
 - [Getting Started](#getting-started)
+  - [Automated Setup](#option-1-automated-setup-recommended)
+  - [Manual Setup](#option-2-manual-setup)
+  - [Team Setup](#team-setup---share-configuration-easily)
+  - [Troubleshooting](#troubleshooting-setup)
 - [Installation](#installation)
 - [Configuration](#configuration)
+
+### 📚 Using PlanProof
 - [Usage](#usage)
+- [Use Cases](#use-cases)
+- [Business Rules & Validation](#business-rules--validation)
+
+### 🔧 Development
+- [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [API Reference](#api-reference)
 - [Development](#development)
 - [Testing](#testing)
+
+### 🚀 Production
 - [Deployment](#deployment)
 - [Contributing](#contributing)
+- [Support](#support)
 
 ---
-
-## 🎯 Overview
-
-**PlanProof** is a sophisticated AI-powered validation system designed for planning authorities to automate the review of planning applications. It combines deterministic rule-based validation with intelligent AI processing to ensure accuracy, auditability, and cost-efficiency.
-
-### Problem Statement
-
-Planning authorities process thousands of applications annually, requiring:
-- Manual extraction of data from PDFs
-- Validation against complex planning regulations
-- Evidence-backed decision making
-- Version tracking and change management
-- Officer oversight and override capabilities
-
-### Solution
-
-PlanProof automates 80%+ of the validation process while maintaining:
 - ✅ **100% Auditability** - Every decision linked to source evidence
 - ✅ **Cost Efficiency** - Deterministic-first approach minimizes AI costs
 - ✅ **Human-in-the-Loop** - Officers retain full control with override capabilities
@@ -335,37 +377,264 @@ PlanProof implements **30 comprehensive business rules** organized into 10 categ
 |-----------|---------|----------|-------|
 | **Python** | 3.11+ | ✅ Yes | 3.11 or 3.12 recommended |
 | **PostgreSQL** | 13+ | ✅ Yes | With PostGIS extension |
-| **Azure Account** | - | ✅ Yes | Blob + DocIntel + OpenAI |
+| **Azure Account** | - | ✅ Yes | Blob Storage + Document Intelligence + OpenAI |
+| **VS Code** | Latest | 🎯 Recommended | For optimal development experience |
 | **Poppler** | Latest | ⚠️ Optional | For PDF rendering (pdf2image) |
-| **PyMuPDF** | Latest | ⚠️ Optional | Alternative PDF library |
 
-### Quick Start (5 minutes)
+---
 
+### 🎯 Option 1: Automated Setup (Recommended)
+
+The fastest way to get started - **takes just 5 minutes!**
+
+#### **Windows**
+```powershell
+# 1. Clone repository
+git clone <your-repo-url>
+cd PlanProof
+
+# 2. Run automated setup script
+.\setup-dev.ps1
+
+# 3. Configure credentials (open in any text editor)
+notepad .env                        # Add Azure credentials
+notepad .vscode\settings.json       # Add database password
+
+# 4. Open in VS Code
+code .
+# When prompted, click "Install Recommended Extensions"
+
+# 5. Initialize database
+alembic upgrade head
+
+# 6. Start the application
+python run_ui.py
+
+# 7. Open browser → http://localhost:8501 🎉
+```
+
+#### **Linux / Mac**
 ```bash
 # 1. Clone repository
 git clone <your-repo-url>
 cd PlanProof
 
-# 2. Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# 2. Run automated setup script
+chmod +x setup-dev.sh
+./setup-dev.sh
 
-# 3. Install dependencies
-pip install -r requirements.txt
+# 3. Configure credentials
+nano .env                          # Add Azure credentials
+nano .vscode/settings.json         # Add database password
 
-# 4. Configure environment
-cp .env.example .env
-# Edit .env with your Azure credentials
+# 4. Open in VS Code
+code .
+# When prompted, click "Install Recommended Extensions"
 
 # 5. Initialize database
 alembic upgrade head
 
-# 6. Start UI
+# 6. Start the application
 python run_ui.py
 
-# 7. Open browser
-# Navigate to http://localhost:8501
+# 7. Open browser → http://localhost:8501 🎉
 ```
+
+#### **What the setup script does:**
+- ✅ Creates Python virtual environment (`.venv`)
+- ✅ Installs all required packages
+- ✅ Creates configuration files from templates
+- ✅ Validates your environment
+- ✅ Prepares the project for immediate use
+
+---
+
+### 🔧 Option 2: Manual Setup
+
+For users who prefer step-by-step control:
+
+<details>
+<summary><b>Click to expand manual setup instructions</b></summary>
+
+#### **Step 1: Clone and Enter Project**
+```bash
+git clone <your-repo-url>
+cd PlanProof
+```
+
+#### **Step 2: Create Virtual Environment**
+```bash
+# Windows PowerShell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# Linux / Mac
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+#### **Step 3: Install Dependencies**
+```bash
+# Install development dependencies (includes production dependencies)
+pip install -r requirements-dev.txt
+
+# Or for production only:
+# pip install -r requirements.txt
+```
+
+#### **Step 4: Configure Environment Variables**
+```bash
+# Copy template
+cp .env.example .env
+
+# Edit with your credentials
+# Required variables:
+#   - AZURE_STORAGE_CONNECTION_STRING
+#   - AZURE_STORAGE_CONTAINER_NAME
+#   - AZURE_DOC_INTEL_ENDPOINT
+#   - AZURE_DOC_INTEL_KEY
+#   - AZURE_OPENAI_ENDPOINT
+#   - AZURE_OPENAI_KEY
+#   - DATABASE_URL
+```
+
+#### **Step 5: Setup Database**
+```bash
+# Run migrations to create all tables
+alembic upgrade head
+```
+
+#### **Step 6: Configure VS Code (Optional but Recommended)**
+```bash
+# Copy settings template
+cp .vscode/settings.example.json .vscode/settings.json
+
+# Edit .vscode/settings.json and add database password
+
+# Open in VS Code
+code .
+```
+
+#### **Step 7: Run Application**
+```bash
+# Start the Streamlit UI
+python run_ui.py
+
+# Or use the API directly
+python main.py --help
+```
+
+</details>
+
+---
+
+### 👥 Team Setup - Share Configuration Easily
+
+**Scenario:** A team member has already configured the project. You want the same setup.
+
+#### **Quick Team Onboarding (3 steps)**
+
+1️⃣ **Get the code**
+```bash
+git clone <your-repo-url>
+cd PlanProof
+```
+
+2️⃣ **Run setup**
+```powershell
+# Windows
+.\setup-dev.ps1
+
+# Linux/Mac
+./setup-dev.sh
+```
+
+3️⃣ **Add credentials & install extensions**
+- Copy `.env` and `.vscode\settings.json` from your teammate
+- **OR** manually edit these files with your credentials
+- Open in VS Code: `code .`
+- When prompted: Click **"Install Recommended Extensions"**
+- Done! 🎉
+
+#### **What you get automatically:**
+- ✅ **26 VS Code extensions** - Python, PostgreSQL, Azure, GitHub Copilot, PDF viewer, and more
+- ✅ **Pre-configured settings** - Formatting, linting, database connections
+- ✅ **Consistent environment** - Same setup as the rest of your team
+- ✅ **Zero manual configuration** - Just add credentials and go!
+
+📖 **Detailed guide:** [VS Code Setup Documentation](docs/VSCODE_SETUP.md)
+
+---
+
+### 🆘 Troubleshooting Setup
+
+<details>
+<summary><b>Python not found</b></summary>
+
+```bash
+# Check if Python is installed
+python --version  # Windows
+python3 --version # Linux/Mac
+
+# Should show Python 3.11.x or 3.12.x
+# If not, download from: https://www.python.org/downloads/
+```
+</details>
+
+<details>
+<summary><b>PowerShell script execution policy error (Windows)</b></summary>
+
+```powershell
+# Run this once to allow scripts
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# Then try the setup script again
+.\setup-dev.ps1
+```
+</details>
+
+<details>
+<summary><b>Virtual environment activation fails</b></summary>
+
+```bash
+# Delete and recreate
+rm -rf .venv       # Linux/Mac
+Remove-Item -Recurse -Force .venv  # Windows PowerShell
+
+# Create fresh environment
+python -m venv .venv
+
+# Activate
+.\.venv\Scripts\Activate.ps1  # Windows
+source .venv/bin/activate     # Linux/Mac
+
+# Reinstall
+pip install -r requirements-dev.txt
+```
+</details>
+
+<details>
+<summary><b>Database connection fails</b></summary>
+
+1. Verify credentials in `.env` file
+2. Check PostgreSQL is running
+3. Test connection:
+```bash
+psql "postgresql://user:password@host:5432/database?sslmode=require"
+```
+4. See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for more help
+</details>
+
+<details>
+<summary><b>VS Code extensions won't install</b></summary>
+
+- **Check internet connection**
+- **Restart VS Code** after installation
+- **Manual install:** Press `Ctrl+Shift+X`, search for extension name, click Install
+- **View extension list:** See `.vscode/extensions.json`
+</details>
+
+📚 **More help:** [Complete Troubleshooting Guide](docs/TROUBLESHOOTING.md)
 
 ---
 
@@ -965,11 +1234,99 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 
 ---
 
-## 📞 Support
+## 📞 Support & Documentation
 
-- **Documentation**: [docs/](docs/)
-- **Issues**: GitHub Issues
-- **Questions**: Create a discussion
+### 📚 Complete Documentation
+
+All documentation is organized in the [`docs/`](docs/) folder:
+
+#### **Getting Started**
+- 📖 [**Setup Guide**](docs/setup_guide.md) - Detailed installation and configuration
+- 💻 [**VS Code Setup**](docs/VSCODE_SETUP.md) - Team-ready development environment
+- 🏗️ [**Architecture**](docs/ARCHITECTURE.md) - System design and components
+
+#### **Development**
+- 🔌 [**API Reference**](docs/API.md) - CLI commands and Python API
+- 🤝 [**Contributing**](docs/CONTRIBUTING.md) - Development guidelines
+- 📋 [**Enhanced Issue Model**](docs/ENHANCED_ISSUE_MODEL.md) - Validation issue format spec
+- 📝 [**Part 2 Implementation**](docs/PART_2_COMPLETE.md) - UI components documentation
+- 📝 [**Part 3 Implementation**](docs/PART_3_COMPLETE.md) - Resolution tracking documentation
+
+#### **Operations**
+- 🚀 [**Deployment**](docs/DEPLOYMENT.md) - Production deployment guide
+- 🐛 [**Troubleshooting**](docs/TROUBLESHOOTING.md) - Common issues and solutions
+- ⚡ [**Performance Guide**](docs/PERFORMANCE_TROUBLESHOOTING.md) - Optimization techniques
+- ❌ [**Error Troubleshooting**](docs/ERROR_TROUBLESHOOTING.md) - Error tracking and debugging
+- 🔍 [**Query Guide**](docs/QUERY_GUIDE.md) - Database queries and analytics
+
+### 🆘 Getting Help
+
+- **📖 Documentation**: Start with [docs/README.md](docs/README.md) for the full index
+- **🐛 Bug Reports**: [Create an issue](../../issues) with reproduction steps
+- **💡 Feature Requests**: [Open a discussion](../../discussions) to propose new features
+- **❓ Questions**: Check [Troubleshooting Guide](docs/TROUBLESHOOTING.md) first
+
+### 🔐 Security
+
+- **Credentials**: Never commit `.env` or `.vscode/settings.json` (they're in `.gitignore`)
+- **Database**: Use SSL connections in production (configured by default)
+- **Azure**: Rotate keys regularly and use managed identities where possible
+- **Dependencies**: Run `safety check` to scan for vulnerabilities
+
+---
+
+## 🎓 Quick Reference
+
+### Daily Development Commands
+```bash
+# Start the UI
+python run_ui.py
+
+# Run tests
+pytest
+
+# Format code
+black planproof/
+
+# Lint code
+ruff check planproof/
+
+# Database migrations
+alembic upgrade head              # Apply migrations
+alembic revision --autogenerate   # Create new migration
+```
+
+### Key Keyboard Shortcuts (VS Code)
+- `` Ctrl+` `` - Toggle Terminal
+- `Ctrl+Shift+P` - Command Palette
+- `Ctrl+P` - Quick file open
+- `F5` - Start debugging
+- `Ctrl+I` - GitHub Copilot inline chat
+
+### Important Files
+```
+PlanProof/
+├── .env                          # Azure credentials (DO NOT COMMIT)
+├── .vscode/settings.json         # VS Code config (DO NOT COMMIT)
+├── requirements.txt              # Production dependencies
+├── requirements-dev.txt          # Development dependencies
+├── alembic.ini                   # Database migration config
+├── run_ui.py                     # Start Streamlit UI
+├── main.py                       # CLI entry point
+└── docs/                         # All documentation
+```
+
+---
+
+## 🏆 Why Choose PlanProof?
+
+✅ **Cost-Effective** - Deterministic-first approach reduces AI costs by 80%  
+✅ **Audit-Ready** - Every decision linked to source evidence with page references  
+✅ **Team-Friendly** - Easy setup with portable VS Code configuration  
+✅ **Production-Ready** - Enterprise PostgreSQL, Azure integration, Docker support  
+✅ **Extensible** - Add new validation rules in minutes  
+✅ **Modern Stack** - FastAPI, Streamlit, SQLAlchemy, Pydantic  
+✅ **Well-Documented** - Comprehensive guides for every aspect  
 
 ---
 
@@ -977,6 +1334,10 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 
 **Built with ❤️ for Planning Authorities**
 
-[Documentation](docs/) • [Architecture](docs/ARCHITECTURE.md) • [API Reference](docs/API.md)
+[📖 Documentation](docs/) • [🏗️ Architecture](docs/ARCHITECTURE.md) • [🔌 API Reference](docs/API.md) • [🚀 Deployment](docs/DEPLOYMENT.md)
+
+---
+
+**PlanProof** - Making Planning Application Validation Intelligent, Efficient, and Auditable
 
 </div>

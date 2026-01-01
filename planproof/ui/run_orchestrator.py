@@ -250,16 +250,36 @@ def _process_run(
                 
             except Exception as e:
                 error_details = traceback.format_exc()
-                errors.append({
+                error_info = {
                     "filename": Path(file_path).name,
                     "error": str(e),
-                    "traceback": error_details
-                })
+                    "error_type": type(e).__name__,
+                    "traceback": error_details,
+                    "step": "unknown",  # Will be overridden if we know which step failed
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                
+                # Try to determine which step failed
+                if "ingest" in error_details.lower():
+                    error_info["step"] = "ingestion"
+                elif "extract" in error_details.lower() or "docintel" in error_details.lower():
+                    error_info["step"] = "extraction"
+                elif "validate" in error_details.lower():
+                    error_info["step"] = "validation"
+                elif "llm" in error_details.lower():
+                    error_info["step"] = "llm_gate"
+                
+                errors.append(error_info)
+                print(f"ERROR processing {Path(file_path).name} at step '{error_info['step']}': {str(e)}")
+                
                 # Save error to outputs
                 inputs_dir, outputs_dir = _ensure_run_dirs(run_id)
                 error_file = outputs_dir / f"error_{Path(file_path).name}.txt"
                 with open(error_file, "w", encoding="utf-8") as f:
-                    f.write(f"Error processing {Path(file_path).name}:\n\n")
+                    f.write(f"Error processing {Path(file_path).name}:\n")
+                    f.write(f"Step: {error_info['step']}\n")
+                    f.write(f"Error Type: {error_info['error_type']}\n")
+                    f.write(f"Timestamp: {error_info['timestamp']}\n\n")
                     f.write(error_details)
         
         # Get total LLM calls
@@ -267,21 +287,38 @@ def _process_run(
         
         # Update run with final status (ensure this always happens)
         final_status = "completed" if len(errors) == 0 else "completed_with_errors"
+        
+        # Create summary data
+        summary_data = {
+            "run_id": run_id,
+            "application_ref": app_ref,
+            "status": final_status,
+            "summary": {
+                "total_documents": total_docs,
+                "processed": processed,
+                "errors": len(errors)
+            },
+            "results": all_results,
+            "errors": errors,
+            "llm_calls_per_run": llm_calls_per_run,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Save summary to file for easy access
+        inputs_dir, outputs_dir = _ensure_run_dirs(run_id)
+        summary_file = outputs_dir / "summary.json"
+        try:
+            with open(summary_file, "w", encoding="utf-8") as f:
+                json.dump(summary_data, f, indent=2, ensure_ascii=False)
+            print(f"Summary saved to {summary_file}")
+        except Exception as summary_error:
+            print(f"Warning: Failed to save summary file: {summary_error}")
+        
         try:
             db.update_run(
                 run_id,
                 status=final_status,
-                metadata={
-                    "summary": {
-                        "total_documents": total_docs,
-                        "processed": processed,
-                        "errors": len(errors)
-                    },
-                    "results": all_results,
-                    "errors": errors,
-                    "llm_calls_per_run": llm_calls_per_run,
-                    "completed_at": datetime.now(timezone.utc).isoformat()
-                }
+                metadata=summary_data
             )
             print(f"Run {run_id} status updated to {final_status}")
         except Exception as update_error:
