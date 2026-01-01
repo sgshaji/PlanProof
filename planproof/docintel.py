@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 import logging
 import time
 
-from azure.core.exceptions import AzureError
+from azure.core.exceptions import AzureError, ServiceRequestError, ServiceResponseError
 
 from planproof.config import get_settings
 
@@ -17,9 +17,16 @@ class DocumentIntelligence:
     def __init__(
         self,
         endpoint: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        timeout: Optional[int] = None
     ):
-        """Initialize Document Intelligence client."""
+        """Initialize Document Intelligence client.
+
+        Args:
+            endpoint: Azure Document Intelligence endpoint URL
+            api_key: Azure Document Intelligence API key
+            timeout: Timeout in seconds for operations (default: 300)
+        """
         from azure.ai.documentintelligence import DocumentIntelligenceClient
         from azure.core.credentials import AzureKeyCredential
         settings = get_settings()
@@ -32,30 +39,65 @@ class DocumentIntelligence:
         )
         self._settings = settings
         self._logger = logging.getLogger(__name__)
+        self._timeout = timeout or 300  # Default 5 minute timeout for document analysis
 
     def _with_retry(self, operation_name: str, func, *args, **kwargs):
+        """Execute a function with exponential backoff retry logic.
+
+        Args:
+            operation_name: Name of the operation for logging
+            func: Function to execute
+            *args: Positional arguments for the function
+            **kwargs: Keyword arguments for the function
+
+        Returns:
+            Result of the function call
+
+        Raises:
+            RuntimeError: If all retries are exhausted or operation times out
+        """
         max_attempts = max(1, self._settings.azure_retry_max_attempts)
         base_delay = max(0.1, self._settings.azure_retry_base_delay_s)
         last_error = None
+
         for attempt in range(1, max_attempts + 1):
             try:
                 return func(*args, **kwargs)
-            except AzureError as exc:
+            except ServiceRequestError as exc:
+                # Network/connection errors - retriable
                 last_error = exc
+                error_msg = f"Document Intelligence network error on {operation_name}: {str(exc)}"
+                self._logger.warning(error_msg)
                 if attempt == max_attempts:
-                    break
-                delay = base_delay * (2 ** (attempt - 1))
-                self._logger.warning(
-                    "docintel_retry",
-                    extra={
-                        "operation": operation_name,
-                        "attempt": attempt,
-                        "max_attempts": max_attempts,
-                        "delay_s": delay,
-                        "error": str(exc),
-                    },
-                )
-                time.sleep(delay)
+                    raise RuntimeError(f"{error_msg}. Failed after {max_attempts} attempts.") from exc
+            except ServiceResponseError as exc:
+                # Service errors (500s) - retriable
+                last_error = exc
+                error_msg = f"Document Intelligence service error on {operation_name}: {str(exc)}"
+                self._logger.warning(error_msg)
+                if attempt == max_attempts:
+                    raise RuntimeError(f"{error_msg}. Failed after {max_attempts} attempts.") from exc
+            except AzureError as exc:
+                # Other Azure errors - may or may not be retriable
+                last_error = exc
+                error_msg = f"Document Intelligence Azure error on {operation_name}: {str(exc)}"
+                self._logger.warning(error_msg)
+                if attempt == max_attempts:
+                    raise RuntimeError(f"{error_msg}. Failed after {max_attempts} attempts.") from exc
+            except Exception as exc:
+                # Unexpected errors - don't retry
+                error_msg = f"Unexpected error in Document Intelligence {operation_name}: {str(exc)}"
+                self._logger.error(error_msg, exc_info=True)
+                raise RuntimeError(error_msg) from exc
+
+            # Calculate delay and sleep before retry
+            delay = base_delay * (2 ** (attempt - 1))
+            self._logger.warning(
+                f"Retrying {operation_name} (attempt {attempt}/{max_attempts}) after {delay}s delay"
+            )
+            time.sleep(delay)
+
+        # Should not reach here, but just in case
         raise last_error
 
     def analyze_document(
@@ -65,11 +107,12 @@ class DocumentIntelligence:
         pages: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Analyze a document using Document Intelligence.
+        Analyze a document using Document Intelligence with timeout handling.
 
         Args:
             pdf_bytes: PDF file content as bytes
             model: Model to use (default: "prebuilt-layout")
+            pages: Optional list of page ranges to analyze
 
         Returns:
             Normalized dictionary with:
@@ -77,12 +120,16 @@ class DocumentIntelligence:
             - tables: List of tables with cells and content
             - page_anchors: Page number to content mapping
             - metadata: Document metadata (page count, model used, etc.)
+
+        Raises:
+            RuntimeError: If analysis fails or times out
         """
         try:
             # Use the correct API signature for azure-ai-documentintelligence 1.0.2
             # body is a required positional argument, content_type goes in headers
             from io import BytesIO
-            
+            import threading
+
             poller = self._with_retry(
                 "begin_analyze_document_bytes",
                 self.client.begin_analyze_document,
@@ -91,11 +138,33 @@ class DocumentIntelligence:
                 content_type="application/pdf",
                 pages=pages,
             )
-            result = self._with_retry("poll_analyze_document_bytes", poller.result)
+
+            # Poll with timeout
+            start_time = time.time()
+            while not poller.done():
+                elapsed = time.time() - start_time
+                if elapsed > self._timeout:
+                    self._logger.error(f"Document Intelligence analysis timed out after {self._timeout}s")
+                    raise RuntimeError(
+                        f"Document Intelligence analysis timed out after {self._timeout}s. "
+                        f"Consider increasing timeout for large documents or using parallel analysis."
+                    )
+                time.sleep(1)  # Poll every second
+
+            result = poller.result()
             return self._normalize_result(result, model)
 
+        except RuntimeError:
+            # Re-raise RuntimeError from timeout or retry logic
+            raise
         except AzureError as e:
-            raise RuntimeError(f"Document Intelligence analysis failed: {str(e)}") from e
+            error_msg = f"Document Intelligence analysis failed: {str(e)}"
+            self._logger.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error during document analysis: {str(e)}"
+            self._logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
 
     def analyze_document_url(
         self,

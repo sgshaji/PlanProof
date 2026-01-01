@@ -3,13 +3,17 @@ Azure OpenAI wrapper for LLM-based resolution and validation.
 """
 
 from typing import List, Dict, Any, Optional
+import logging
 
 import openai
+from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
 
 AzureOpenAI = openai.AzureOpenAI
 from openai.types.chat import ChatCompletion
 
 from planproof.config import get_settings
+
+LOGGER = logging.getLogger(__name__)
 
 
 class AzureOpenAIClient:
@@ -20,9 +24,18 @@ class AzureOpenAIClient:
         endpoint: Optional[str] = None,
         api_key: Optional[str] = None,
         api_version: Optional[str] = None,
-        deployment: Optional[str] = None
+        deployment: Optional[str] = None,
+        timeout: Optional[float] = None
     ):
-        """Initialize Azure OpenAI client."""
+        """Initialize Azure OpenAI client.
+
+        Args:
+            endpoint: Azure OpenAI endpoint URL
+            api_key: Azure OpenAI API key
+            api_version: API version to use
+            deployment: Deployment name for chat completions
+            timeout: Timeout in seconds for API calls (default: 60.0)
+        """
         settings = get_settings()
         endpoint = endpoint or settings.azure_openai_endpoint
         api_key = api_key or settings.azure_openai_api_key
@@ -32,9 +45,11 @@ class AzureOpenAIClient:
         self.client = openai.AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
-            api_version=api_version
+            api_version=api_version,
+            timeout=timeout or 60.0  # Default 60 second timeout
         )
         self.deployment = deployment
+        self.timeout = timeout or 60.0
         self._call_count = 0  # Track LLM calls for metrics
 
     def chat_completion(
@@ -45,7 +60,7 @@ class AzureOpenAIClient:
         **kwargs
     ) -> ChatCompletion:
         """
-        Create a chat completion.
+        Create a chat completion with proper error handling.
 
         Args:
             messages: List of message dictionaries with "role" and "content"
@@ -55,15 +70,40 @@ class AzureOpenAIClient:
 
         Returns:
             ChatCompletion response
+
+        Raises:
+            RuntimeError: If API call fails after retries or times out
         """
         self._call_count += 1
-        return self.client.chat.completions.create(
-            model=self.deployment,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **kwargs
-        )
+
+        try:
+            return self.client.chat.completions.create(
+                model=self.deployment,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+        except APITimeoutError as e:
+            error_msg = f"Azure OpenAI API timeout after {self.timeout}s: {str(e)}"
+            LOGGER.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        except RateLimitError as e:
+            error_msg = f"Azure OpenAI rate limit exceeded: {str(e)}"
+            LOGGER.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        except APIConnectionError as e:
+            error_msg = f"Azure OpenAI connection error: {str(e)}"
+            LOGGER.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        except APIError as e:
+            error_msg = f"Azure OpenAI API error: {str(e)}"
+            LOGGER.error(error_msg)
+            raise RuntimeError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Unexpected error calling Azure OpenAI: {str(e)}"
+            LOGGER.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
     
     def get_call_count(self) -> int:
         """Get the current LLM call count for this client instance."""

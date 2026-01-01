@@ -4,12 +4,15 @@ Ingest module: Upload PDFs to blob storage and create database records.
 
 import os
 import hashlib
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from planproof.storage import StorageClient
 from planproof.db import Database, Application, Document, Submission
+
+LOGGER = logging.getLogger(__name__)
 
 
 def ingest_pdf(
@@ -51,26 +54,53 @@ def ingest_pdf(
     # Validate PDF exists
     pdf_path_obj = Path(pdf_path)
     if not pdf_path_obj.exists():
-        raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        error_msg = f"PDF file not found: {pdf_path}"
+        LOGGER.error(error_msg)
+        raise FileNotFoundError(error_msg)
 
     if not pdf_path_obj.suffix.lower() == ".pdf":
-        raise ValueError(f"File must be a PDF: {pdf_path}")
+        error_msg = f"File must be a PDF, got: {pdf_path_obj.suffix}"
+        LOGGER.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Check file size (warn if > 50MB)
+    file_size = pdf_path_obj.stat().st_size
+    if file_size > 50 * 1024 * 1024:  # 50MB
+        LOGGER.warning(f"Large PDF file detected: {file_size / (1024*1024):.2f}MB. Processing may be slow.")
+    elif file_size == 0:
+        error_msg = f"PDF file is empty: {pdf_path}"
+        LOGGER.error(error_msg)
+        raise ValueError(error_msg)
 
     # Compute content hash for deduplication (streaming for large files)
-    hasher = hashlib.sha256()
-    with open(pdf_path_obj, "rb") as handle:
-        for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
-            hasher.update(chunk)
-    content_hash = hasher.hexdigest()
+    try:
+        hasher = hashlib.sha256()
+        with open(pdf_path_obj, "rb") as handle:
+            for chunk in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+                hasher.update(chunk)
+        content_hash = hasher.hexdigest()
+        LOGGER.debug(f"Computed content hash for {pdf_path_obj.name}: {content_hash[:16]}...")
+    except (IOError, OSError) as e:
+        error_msg = f"Failed to read PDF file {pdf_path} for hashing: {str(e)}"
+        LOGGER.error(error_msg)
+        raise RuntimeError(error_msg) from e
 
     # Get or create application
-    application = db.get_application_by_ref(application_ref)
-    if application is None:
-        application = db.create_application(
-            application_ref=application_ref,
-            applicant_name=applicant_name,
-            application_date=application_date
-        )
+    try:
+        application = db.get_application_by_ref(application_ref)
+        if application is None:
+            LOGGER.info(f"Creating new application: {application_ref}")
+            application = db.create_application(
+                application_ref=application_ref,
+                applicant_name=applicant_name,
+                application_date=application_date
+            )
+        else:
+            LOGGER.debug(f"Found existing application: {application_ref} (ID: {application.id})")
+    except Exception as e:
+        error_msg = f"Failed to get or create application {application_ref}: {str(e)}"
+        LOGGER.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg) from e
 
     # Get or create submission (V0 or V1+ based on parent_submission_id)
     if parent_submission_id is not None:
@@ -106,12 +136,19 @@ def ingest_pdf(
     try:
         existing_doc = session.query(Document).filter(Document.content_hash == content_hash).first()
         if existing_doc:
+            LOGGER.info(f"Duplicate document detected (hash: {content_hash[:16]}...). Reusing existing document ID: {existing_doc.id}")
             # Link existing document to this application and submission if not already linked
-            if existing_doc.application_id != application.id:
-                existing_doc.application_id = application.id
-            if existing_doc.submission_id != submission.id:
-                existing_doc.submission_id = submission.id
-            session.commit()
+            try:
+                if existing_doc.application_id != application.id:
+                    existing_doc.application_id = application.id
+                if existing_doc.submission_id != submission.id:
+                    existing_doc.submission_id = submission.id
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                error_msg = f"Failed to link duplicate document {existing_doc.id} to application/submission: {str(e)}"
+                LOGGER.error(error_msg)
+                raise RuntimeError(error_msg) from e
             return {
                 "application_id": application.id,
                 "submission_id": submission.id,
@@ -120,20 +157,40 @@ def ingest_pdf(
                 "filename": existing_doc.filename,
                 "duplicate": True
             }
+    except RuntimeError:
+        # Re-raise RuntimeError from linking failure
+        raise
+    except Exception as e:
+        error_msg = f"Database error while checking for duplicate documents: {str(e)}"
+        LOGGER.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg) from e
     finally:
         session.close()
 
     # Upload PDF to blob storage
-    blob_uri = storage_client.upload_pdf(pdf_path, blob_name=blob_name)
+    try:
+        LOGGER.info(f"Uploading PDF to blob storage: {pdf_path_obj.name}")
+        blob_uri = storage_client.upload_pdf(pdf_path, blob_name=blob_name)
+        LOGGER.info(f"Successfully uploaded PDF to: {blob_uri}")
+    except Exception as e:
+        error_msg = f"Failed to upload PDF {pdf_path_obj.name} to blob storage: {str(e)}"
+        LOGGER.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg) from e
 
     # Create document record with content hash, linked to both application and submission
-    document = db.create_document(
-        application_id=application.id,
-        submission_id=submission.id,
-        blob_uri=blob_uri,
-        filename=pdf_path_obj.name,
-        content_hash=content_hash
-    )
+    try:
+        document = db.create_document(
+            application_id=application.id,
+            submission_id=submission.id,
+            blob_uri=blob_uri,
+            filename=pdf_path_obj.name,
+            content_hash=content_hash
+        )
+        LOGGER.info(f"Created document record (ID: {document.id}) for {pdf_path_obj.name}")
+    except Exception as e:
+        error_msg = f"Failed to create document record for {pdf_path_obj.name}: {str(e)}"
+        LOGGER.error(error_msg, exc_info=True)
+        raise RuntimeError(error_msg) from e
 
     return {
         "application_id": application.id,

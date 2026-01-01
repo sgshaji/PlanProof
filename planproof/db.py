@@ -411,7 +411,19 @@ class Database:
         applicant_name: Optional[str] = None,
         application_date: Optional[datetime] = None
     ) -> Application:
-        """Create a new application record."""
+        """Create a new application record.
+
+        Args:
+            application_ref: Unique application reference
+            applicant_name: Optional applicant name
+            application_date: Optional application date
+
+        Returns:
+            Created Application object
+
+        Raises:
+            RuntimeError: If database operation fails
+        """
         session = self.get_session()
         try:
             app = Application(
@@ -423,6 +435,10 @@ class Database:
             session.commit()
             session.refresh(app)
             return app
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to create application {application_ref}: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
@@ -444,7 +460,23 @@ class Database:
         content_hash: Optional[str] = None,
         submission_id: Optional[int] = None
     ) -> Document:
-        """Create a new document record."""
+        """Create a new document record.
+
+        Args:
+            application_id: ID of the application
+            blob_uri: URI of the blob storage location
+            filename: Original filename
+            page_count: Optional page count
+            docintel_model: Optional document intelligence model used
+            content_hash: Optional SHA256 hash of content
+            submission_id: Optional submission ID
+
+        Returns:
+            Created Document object
+
+        Raises:
+            RuntimeError: If database operation fails
+        """
         session = self.get_session()
         try:
             doc = Document(
@@ -460,6 +492,10 @@ class Database:
             session.commit()
             session.refresh(doc)
             return doc
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to create document record for {filename}: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
@@ -478,7 +514,20 @@ class Database:
         application_id: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Create a new run record."""
+        """Create a new run record.
+
+        Args:
+            run_type: Type of run (e.g., "ingest", "extract", "validate")
+            document_id: Optional document ID
+            application_id: Optional application ID
+            metadata: Optional metadata dictionary
+
+        Returns:
+            Dictionary with run details
+
+        Raises:
+            RuntimeError: If database operation fails
+        """
         session = self.get_session()
         try:
             run = Run(
@@ -498,6 +547,10 @@ class Database:
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "status": run.status
             }
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to create run record: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
@@ -508,7 +561,20 @@ class Database:
         blob_uri: str,
         metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Create a new artefact record."""
+        """Create a new artefact record.
+
+        Args:
+            document_id: Document ID
+            artefact_type: Type of artefact
+            blob_uri: URI of the blob storage location
+            metadata: Optional metadata dictionary
+
+        Returns:
+            Dictionary with artefact details
+
+        Raises:
+            RuntimeError: If database operation fails
+        """
         session = self.get_session()
         try:
             artefact = Artefact(
@@ -527,17 +593,38 @@ class Database:
                 "blob_uri": artefact.blob_uri,
                 "created_at": artefact.created_at.isoformat() if artefact.created_at else None
             }
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to create artefact record: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
     def link_document_to_run(self, run_id: int, document_id: int):
-        """Link a document to a run by updating the run's document_id."""
+        """Link a document to a run by updating the run's document_id.
+
+        Args:
+            run_id: Run ID
+            document_id: Document ID to link
+
+        Raises:
+            RuntimeError: If database operation fails
+            ValueError: If run not found
+        """
         session = self.get_session()
         try:
             run = session.query(Run).filter(Run.id == run_id).first()
-            if run:
-                run.document_id = document_id
-                session.commit()
+            if not run:
+                raise ValueError(f"Run {run_id} not found")
+            run.document_id = document_id
+            session.commit()
+        except ValueError:
+            # Re-raise ValueError without rollback (no changes made)
+            raise
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to link document {document_id} to run {run_id}: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
@@ -548,22 +635,42 @@ class Database:
         error_message: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ):
-        """Update a run record."""
+        """Update a run record.
+
+        Args:
+            run_id: Run ID to update
+            status: Optional status to set
+            error_message: Optional error message
+            metadata: Optional metadata to merge with existing
+
+        Raises:
+            RuntimeError: If database operation fails
+            ValueError: If run not found
+        """
         session = self.get_session()
         try:
             run = session.query(Run).filter(Run.id == run_id).first()
-            if run:
-                if status:
-                    run.status = status
-                if error_message:
-                    run.error_message = error_message
-                if metadata:
-                    # Merge with existing metadata
-                    existing = run.run_metadata or {}
-                    existing.update(metadata)
-                    run.run_metadata = existing
-                run.completed_at = datetime.now(timezone.utc)
-                session.commit()
+            if not run:
+                raise ValueError(f"Run {run_id} not found")
+
+            if status:
+                run.status = status
+            if error_message:
+                run.error_message = error_message
+            if metadata:
+                # Merge with existing metadata
+                existing = run.run_metadata or {}
+                existing.update(metadata)
+                run.run_metadata = existing
+            run.completed_at = datetime.now(timezone.utc)
+            session.commit()
+        except ValueError:
+            # Re-raise ValueError without rollback (no changes made)
+            raise
+        except Exception as e:
+            session.rollback()
+            error_msg = f"Failed to update run {run_id}: {str(e)}"
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
 
