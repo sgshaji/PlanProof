@@ -37,7 +37,8 @@ def _ensure_run_dirs(run_id: int) -> tuple:
 def start_run(
     app_ref: str,
     files: List[Any],  # Streamlit UploadedFile objects
-    applicant_name: Optional[str] = None
+    applicant_name: Optional[str] = None,
+    parent_submission_id: Optional[int] = None
 ) -> int:
     """
     Start a processing run (single or batch).
@@ -46,6 +47,7 @@ def start_run(
         app_ref: Application reference
         files: List of uploaded file objects (Streamlit UploadedFile)
         applicant_name: Optional applicant name
+        parent_submission_id: Optional parent submission ID for revisions (V1+)
         
     Returns:
         run_id: Integer run ID
@@ -61,7 +63,7 @@ def start_run(
             applicant_name=applicant_name
         )
     
-    # Create run record with application_id
+    # Create run record with application_id and parent_submission_id
     run = db.create_run(
         run_type="ui_batch" if len(files) > 1 else "ui_single",
         application_id=application.id,
@@ -69,6 +71,8 @@ def start_run(
             "application_ref": app_ref,
             "applicant_name": applicant_name,
             "file_count": len(files),
+            "parent_submission_id": parent_submission_id,
+            "is_modification": parent_submission_id is not None,
             "started_at": datetime.now(timezone.utc).isoformat()
         }
     )
@@ -86,12 +90,12 @@ def start_run(
         saved_files.append(str(file_path))
     
     # Save file list to metadata
-    db.update_run(run_id, metadata={"saved_files": saved_files})
+    db.update_run(run_id, metadata={"saved_files": saved_files, "parent_submission_id": parent_submission_id})
     
     # Start processing in background thread
     thread = threading.Thread(
         target=_process_run,
-        args=(run_id, app_ref, saved_files, applicant_name),
+        args=(run_id, app_ref, saved_files, applicant_name, parent_submission_id),
         daemon=True
     )
     thread.start()
@@ -103,7 +107,8 @@ def _process_run(
     run_id: int,
     app_ref: str,
     file_paths: List[str],
-    applicant_name: Optional[str]
+    applicant_name: Optional[str],
+    parent_submission_id: Optional[int] = None
 ):
     """Process a run in background thread."""
     db = Database()
@@ -130,6 +135,9 @@ def _process_run(
         resolved_fields = db.get_resolved_fields_for_application(app_ref)
         aoai_client.reset_call_count()
         
+        # If this is a modification (V1+), run delta workflow after processing
+        is_modification = parent_submission_id is not None
+        
         # Process each document
         for idx, file_path in enumerate(file_paths):
             try:
@@ -139,17 +147,19 @@ def _process_run(
                         "current": idx + 1,
                         "total": total_docs,
                         "current_file": Path(file_path).name,
-                        "status": "processing"
+                        "status": "processing",
+                        "is_modification": is_modification
                     }
                 })
                 
-                # Ingest
+                # Ingest with parent_submission_id
                 ingested = ingest_pdf(
                     file_path,
                     app_ref,
                     applicant_name=applicant_name,
                     storage_client=storage_client,
-                    db=db
+                    db=db,
+                    parent_submission_id=parent_submission_id  # Pass parent for version linking
                 )
                 db.link_document_to_run(run_id, ingested["document_id"])
                 

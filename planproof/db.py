@@ -889,7 +889,13 @@ class Database:
 
     def __init__(self):
         settings = get_settings()
-        self.engine = create_engine(settings.database_url, echo=False)
+        # Convert postgresql:// to postgresql+psycopg:// to use psycopg3 driver instead of psycopg2
+        db_url = settings.database_url
+        if db_url.startswith("postgresql://"):
+            db_url = db_url.replace("postgresql://", "postgresql+psycopg://", 1)
+        
+        self.conn_str = db_url  # Store for reference
+        self.engine = create_engine(db_url, echo=False)
         self.SessionLocal = sessionmaker(bind=self.engine, autocommit=False, autoflush=False)
 
     def get_session(self) -> Session:

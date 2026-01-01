@@ -19,7 +19,8 @@ def ingest_pdf(
     application_date: Optional[datetime] = None,
     blob_name: Optional[str] = None,
     storage_client: Optional[StorageClient] = None,
-    db: Optional[Database] = None
+    db: Optional[Database] = None,
+    parent_submission_id: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Ingest a single PDF: upload to blob storage and create database records.
@@ -32,6 +33,7 @@ def ingest_pdf(
         blob_name: Optional custom blob name
         storage_client: Optional StorageClient instance (creates new if not provided)
         db: Optional Database instance (creates new if not provided)
+        parent_submission_id: Optional parent submission ID for modification submissions (V1+)
 
     Returns:
         Dictionary with:
@@ -70,14 +72,34 @@ def ingest_pdf(
             application_date=application_date
         )
 
-    # Get or create V0 submission for this application
-    submission = db.get_submission_by_version(application.id, "V0")
-    if submission is None:
+    # Get or create submission (V0 or V1+ based on parent_submission_id)
+    if parent_submission_id is not None:
+        # This is a modification submission - determine next version
+        parent_submission = db.get_submission_by_id(parent_submission_id)
+        if parent_submission:
+            # Parse parent version (e.g., "V0" -> 0, "V1" -> 1)
+            parent_version_num = int(parent_submission.submission_version[1:])
+            next_version = f"V{parent_version_num + 1}"
+        else:
+            # Parent not found, default to V1
+            next_version = "V1"
+        
+        # Create new version submission
         submission = db.create_submission(
             planning_case_id=application.id,
-            submission_version="V0",
-            status="pending"
+            submission_version=next_version,
+            status="pending",
+            parent_submission_id=parent_submission_id
         )
+    else:
+        # Get or create V0 submission for this application
+        submission = db.get_submission_by_version(application.id, "V0")
+        if submission is None:
+            submission = db.create_submission(
+                planning_case_id=application.id,
+                submission_version="V0",
+                status="pending"
+            )
 
     # Check if document with same hash already exists
     session = db.get_session()
