@@ -12,6 +12,8 @@ from pathlib import Path
 if TYPE_CHECKING:
     from planproof.db import Database
 
+from planproof.db import Database
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -45,8 +47,15 @@ def export_decision_package(
         db = Database()
     
     from planproof.db import (
-        Submission, Case, ValidationCheck, OfficerOverride, 
-        ChangeSet, ChangeItem, Document, Evidence, ValidationStatus
+        Submission,
+        Application,
+        ValidationCheck,
+        OfficerOverride,
+        ChangeSet,
+        ChangeItem,
+        Document,
+        Evidence,
+        ValidationStatus,
     )
     
     session = db.get_session()
@@ -58,14 +67,16 @@ def export_decision_package(
         if not submission:
             return {"error": "Submission not found"}
         
-        case = session.query(Case).filter(Case.id == submission.case_id).first()
+        application = session.query(Application).filter(
+            Application.id == submission.planning_case_id
+        ).first()
         
         # Build package
         package = {
             "export_metadata": {
                 "generated_at": datetime.now().isoformat(),
                 "submission_id": submission_id,
-                "case_ref": case.case_ref if case else None,
+                "application_ref": application.application_ref if application else None,
                 "submission_version": submission.submission_version,
                 "status": submission.status
             },
@@ -78,14 +89,14 @@ def export_decision_package(
         }
         
         # Case info
-        if case:
+        if application:
             package["case_info"] = {
-                "case_ref": case.case_ref,
-                "site_address": case.site_address,
-                "postcode": case.postcode,
-                "description": case.description,
-                "status": case.status,
-                "created_at": case.created_at.isoformat() if case.created_at else None
+                "application_ref": application.application_ref,
+                "applicant_name": application.applicant_name,
+                "application_date": application.application_date.isoformat()
+                if application.application_date
+                else None,
+                "created_at": application.created_at.isoformat() if application.created_at else None,
             }
         
         # Validation checks
@@ -106,11 +117,11 @@ def export_decision_package(
         for check in checks:
             rule_detail = {
                 "rule_id": check.rule_id_string,
-                "rule_category": check.rule_category,
+                "rule_category": check.rule.rule_category if check.rule else None,
                 "status": check.status.value if check.status else "unknown",
-                "severity": check.severity,
+                "severity": getattr(check, "severity", None),
                 "message": check.explanation,
-                "evidence": []
+                "evidence": [],
             }
             
             # Add evidence if requested
@@ -120,12 +131,15 @@ def export_decision_package(
                 ).all()
                 
                 for evidence in evidences:
-                    rule_detail["evidence"].append({
-                        "page": evidence.page_number,
-                        "snippet": evidence.evidence_snippet[:200] if evidence.evidence_snippet else None,
-                        "confidence": evidence.confidence_score,
-                        "document_id": evidence.document_id
-                    })
+                    snippet = evidence.snippet or evidence.content
+                    rule_detail["evidence"].append(
+                        {
+                            "page": evidence.page_number,
+                            "snippet": snippet[:200] if snippet else None,
+                            "confidence": evidence.confidence,
+                            "document_id": evidence.document_id,
+                        }
+                    )
             
             package["rules"].append(rule_detail)
         
@@ -135,14 +149,17 @@ def export_decision_package(
         ).all()
         
         for override in overrides:
-            package["overrides"].append({
-                "rule_id": override.rule_id,
-                "original_status": override.original_status,
-                "override_status": override.override_status,
-                "officer_name": override.officer_name,
-                "notes": override.notes,
-                "created_at": override.created_at.isoformat() if override.created_at else None
-            })
+            package["overrides"].append(
+                {
+                    "validation_result_id": override.validation_result_id,
+                    "validation_check_id": override.validation_check_id,
+                    "original_status": override.original_status,
+                    "override_status": override.override_status,
+                    "officer_id": override.officer_id,
+                    "notes": override.notes,
+                    "created_at": override.created_at.isoformat() if override.created_at else None,
+                }
+            )
         
         # Delta summary for modifications
         if submission.submission_version != "V0":
@@ -189,9 +206,9 @@ def export_decision_package(
                 "created_at": doc.created_at.isoformat() if doc.created_at else None
             }
             
-            if include_documents and doc.storage_path:
+            if include_documents:
                 # Include document path (actual file inclusion would be via zip)
-                doc_info["storage_path"] = doc.storage_path
+                doc_info["blob_uri"] = doc.blob_uri
             
             package["documents"].append(doc_info)
         

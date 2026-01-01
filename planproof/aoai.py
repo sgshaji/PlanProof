@@ -3,7 +3,10 @@ Azure OpenAI wrapper for LLM-based resolution and validation.
 """
 
 from typing import List, Dict, Any, Optional
-from openai import AzureOpenAI
+
+import openai
+
+AzureOpenAI = openai.AzureOpenAI
 from openai.types.chat import ChatCompletion
 
 from planproof.config import get_settings
@@ -26,7 +29,7 @@ class AzureOpenAIClient:
         api_version = api_version or settings.azure_openai_api_version
         deployment = deployment or settings.azure_openai_chat_deployment
 
-        self.client = AzureOpenAI(
+        self.client = openai.AzureOpenAI(
             azure_endpoint=endpoint,
             api_key=api_key,
             api_version=api_version
@@ -241,4 +244,3 @@ Be precise and only extract information that is clearly present in the evidence 
                 "error": "LLM response could not be parsed as JSON",
                 "raw_response": content
             }
-

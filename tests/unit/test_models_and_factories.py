@@ -243,24 +243,36 @@ class TestExtractPipeline:
         mock_db_instance = Mock()
         mock_document = Mock()
         mock_document.id = 1
-        mock_document.storage_path = "test.pdf"
+        mock_document.blob_uri = "azure://account/inbox/test.pdf"
         
         mock_session = Mock()
-        mock_session.query.return_value.filter_by.return_value.first.return_value = mock_document
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_document
+        mock_session.query.return_value = mock_query
         mock_db_instance.get_session.return_value = mock_session
         mock_db.return_value = mock_db_instance
         
         # Mock document intelligence
         mock_di_instance = Mock()
         mock_di_instance.analyze_document.return_value = {
-            "fields": {"ApplicantName": {"content": "Test", "confidence": 0.9}}
+            "metadata": {"page_count": 1},
+            "text_blocks": [],
+            "tables": [],
         }
         mock_di.return_value = mock_di_instance
-        
+
+        mock_storage = Mock()
+        mock_storage.download_blob.return_value = b"%PDF-1.4"
+
         try:
             with patch('planproof.pipeline.extract.get_settings') as mock_settings:
                 mock_settings.return_value.enable_db_writes = False
-                result = extract_document(document_id=1, db=mock_db_instance)
+                result = extract_document(
+                    document_id=1,
+                    db=mock_db_instance,
+                    storage_client=mock_storage,
+                    use_url=False,
+                )
                 assert result is not None or True  # Function may need more setup
         except Exception:
             # Needs proper document/storage setup
@@ -278,12 +290,47 @@ class TestExportService:
         mock_db_instance = Mock()
         mock_db.return_value = mock_db_instance
         
-        # Mock database query results
         mock_session = Mock()
         mock_submission = Mock()
         mock_submission.id = 1
-        mock_submission.case_id = 1
-        mock_session.query.return_value.filter_by.return_value.first.return_value = mock_submission
+        mock_submission.planning_case_id = 1
+        mock_submission.submission_version = "V0"
+        mock_submission.status = "completed"
+        mock_application = Mock()
+        mock_application.id = 1
+        mock_application.application_ref = "APP-001"
+
+        submission_query = Mock()
+        submission_query.filter.return_value.first.return_value = mock_submission
+
+        application_query = Mock()
+        application_query.filter.return_value.first.return_value = mock_application
+
+        checks_query = Mock()
+        checks_query.filter.return_value.all.return_value = []
+
+        overrides_query = Mock()
+        overrides_query.filter.return_value.all.return_value = []
+
+        documents_query = Mock()
+        documents_query.filter.return_value.all.return_value = []
+
+        def query_side_effect(model):
+            if model.__name__ == "Submission":
+                return submission_query
+            if model.__name__ == "Application":
+                return application_query
+            if model.__name__ == "ValidationCheck":
+                return checks_query
+            if model.__name__ == "OfficerOverride":
+                return overrides_query
+            if model.__name__ == "Document":
+                return documents_query
+            if model.__name__ in {"ChangeSet", "ChangeItem", "Evidence"}:
+                return Mock(filter=Mock(return_value=Mock(all=Mock(return_value=[]), first=Mock(return_value=None))))
+            return Mock()
+
+        mock_session.query.side_effect = query_side_effect
         mock_db_instance.get_session.return_value = mock_session
         
         try:
@@ -309,7 +356,8 @@ class TestSearchService:
         mock_db_instance = Mock()
         mock_session = Mock()
         mock_query = Mock()
-        mock_query.offset.return_value.limit.return_value.all.return_value = []
+        mock_query.limit.return_value.offset.return_value.all.return_value = []
+        mock_query.count.return_value = 0
         mock_session.query.return_value = mock_query
         mock_db_instance.get_session.return_value = mock_session
         mock_db.return_value = mock_db_instance

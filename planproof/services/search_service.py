@@ -11,6 +11,31 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+from planproof.db import Database
+
+
+class SearchService:
+    """Convenience wrapper for search helpers."""
+
+    def __init__(self, db: Optional["Database"] = None) -> None:
+        self._db = db
+
+    def search_applications(
+        self,
+        query: str,
+        filters: Optional[Dict[str, Any]] = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """Search applications using the shared search helper."""
+        return search_cases(
+            query=query,
+            filters=filters,
+            limit=limit,
+            offset=offset,
+            db=self._db,
+        )
+
 
 def search_cases(
     query: str,
@@ -36,40 +61,35 @@ def search_cases(
         from planproof.db import Database
         db = Database()
     
-    from planproof.db import Case, Submission, Document, ExtractedField
-    from sqlalchemy import or_, and_
+    from planproof.db import Application, Submission, Document, ExtractedField
+    from sqlalchemy import or_
     
     session = db.get_session()
     filters = filters or {}
     
     try:
         # Build base query for cases
-        case_query = session.query(Case)
+        case_query = session.query(Application)
         
         # Apply text search on case fields
         if query:
             search_term = f"%{query}%"
             case_query = case_query.filter(
                 or_(
-                    Case.case_ref.ilike(search_term),
-                    Case.site_address.ilike(search_term),
-                    Case.postcode.ilike(search_term),
-                    Case.description.ilike(search_term)
+                    Application.application_ref.ilike(search_term),
+                    Application.applicant_name.ilike(search_term)
                 )
             )
         
         # Apply filters
-        if filters.get("status"):
-            case_query = case_query.filter(Case.status == filters["status"])
-        
-        if filters.get("case_ref"):
-            case_query = case_query.filter(Case.case_ref == filters["case_ref"])
-        
+        if filters.get("application_ref"):
+            case_query = case_query.filter(Application.application_ref == filters["application_ref"])
+
         if filters.get("date_from"):
-            case_query = case_query.filter(Case.created_at >= filters["date_from"])
-        
+            case_query = case_query.filter(Application.created_at >= filters["date_from"])
+
         if filters.get("date_to"):
-            case_query = case_query.filter(Case.created_at <= filters["date_to"])
+            case_query = case_query.filter(Application.created_at <= filters["date_to"])
         
         # Get total count before pagination
         total_count = case_query.count()
@@ -80,9 +100,9 @@ def search_cases(
         # Build results
         results = []
         for case in cases:
-            # Get latest submission for this case
+            # Get latest submission for this application
             latest_submission = session.query(Submission).filter(
-                Submission.case_id == case.id
+                Submission.planning_case_id == case.id
             ).order_by(Submission.created_at.desc()).first()
             
             # Get validation summary for latest submission
@@ -101,12 +121,9 @@ def search_cases(
                 }
             
             results.append({
-                "case_id": case.id,
-                "case_ref": case.case_ref,
-                "site_address": case.site_address,
-                "postcode": case.postcode,
-                "description": case.description,
-                "status": case.status,
+                "application_id": case.id,
+                "application_ref": case.application_ref,
+                "applicant_name": case.applicant_name,
                 "created_at": case.created_at.isoformat() if case.created_at else None,
                 "latest_submission_id": latest_submission.id if latest_submission else None,
                 "latest_submission_version": latest_submission.submission_version if latest_submission else None,
@@ -150,7 +167,7 @@ def search_submissions(
         from planproof.db import Database
         db = Database()
     
-    from planproof.db import Submission, Case
+    from planproof.db import Submission, Application
     from sqlalchemy import or_
     
     session = db.get_session()
@@ -158,23 +175,22 @@ def search_submissions(
     
     try:
         # Build base query for submissions
-        submission_query = session.query(Submission).join(Case)
+        submission_query = session.query(Submission).join(Application, Submission.planning_case_id == Application.id)
         
         # Apply text search
         if query:
             search_term = f"%{query}%"
             submission_query = submission_query.filter(
                 or_(
-                    Case.case_ref.ilike(search_term),
-                    Case.site_address.ilike(search_term),
-                    Case.postcode.ilike(search_term),
+                    Application.application_ref.ilike(search_term),
+                    Application.applicant_name.ilike(search_term),
                     Submission.submission_version.ilike(search_term)
                 )
             )
         
         # Apply filters
-        if filters.get("case_id"):
-            submission_query = submission_query.filter(Submission.case_id == filters["case_id"])
+        if filters.get("application_id"):
+            submission_query = submission_query.filter(Submission.planning_case_id == filters["application_id"])
         
         if filters.get("version"):
             submission_query = submission_query.filter(Submission.submission_version == filters["version"])
@@ -205,8 +221,8 @@ def search_submissions(
             
             results.append({
                 "submission_id": submission.id,
-                "case_id": submission.case_id,
-                "case_ref": submission.case.case_ref if submission.case else None,
+                "application_id": submission.planning_case_id,
+                "application_ref": submission.planning_case.application_ref if submission.planning_case else None,
                 "submission_version": submission.submission_version,
                 "status": submission.status,
                 "created_at": submission.created_at.isoformat() if submission.created_at else None,
