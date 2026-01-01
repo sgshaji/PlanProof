@@ -5,43 +5,100 @@ New Application Page - Simplified version with native Streamlit components.
 import streamlit as st
 import time
 from pathlib import Path
-import tempfile
 
 
 def render_processing_screen(run_id: int, app_ref: str):
-    """Show real-time processing progress."""
-    
+    """Show real-time processing progress with actual status from orchestrator."""
+    from planproof.ui.run_orchestrator import get_run_status
+
     st.markdown("### 🔄 Processing Your Application")
     st.markdown(f"**Application Reference:** {app_ref}")
     st.markdown(f"**Run ID:** {run_id}")
-    
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    # Simulated processing steps
-    steps = [
-        "Uploading documents...",
-        "Extracting text and metadata...",
-        "Identifying document types...",
-        "Checking required documents...",
-        "Validating measurements...",
-        "Checking policy compliance...",
-        "Analyzing spatial data...",
-        "Generating report..."
-    ]
-    
-    for idx, step in enumerate(steps):
-        progress = (idx + 1) / len(steps)
-        progress_bar.progress(progress)
-        status_text.markdown(f"**Step {idx + 1}/{len(steps)}:** {step}")
-        time.sleep(0.5)
-    
-    st.success("✅ Validation complete!")
-    
-    if st.button("View Results", type="primary"):
-        st.session_state.processing = False
-        st.session_state.active_tab = "My Cases"
+    st.markdown("---")
+
+    # Get actual run status
+    status = get_run_status(run_id)
+    state = status.get("state", "unknown")
+
+    # Progress information
+    progress_info = status.get("progress", {})
+    current = progress_info.get("current", 0)
+    total = progress_info.get("total", 1)
+    current_file = progress_info.get("current_file", "")
+
+    # Show status
+    if state == "running":
+        st.info("🔄 Processing in progress...")
+        if total > 0:
+            progress = current / total
+            st.progress(progress)
+            st.markdown(f"**Progress:** {current} / {total} documents processed")
+            if current_file:
+                st.markdown(f"**Current file:** {current_file}")
+
+        # Auto-refresh every 2 seconds
+        st.markdown("*Auto-refreshing...*")
+        time.sleep(2)
         st.rerun()
+
+    elif state == "completed":
+        st.success("✅ Validation complete!")
+        st.progress(1.0)
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("📋 View Results", type="primary", use_container_width=True):
+                st.session_state.processing = False
+                st.session_state.selected_case = app_ref
+                st.rerun()
+        with col2:
+            if st.button("🆕 New Application", use_container_width=True):
+                st.session_state.processing = False
+                st.session_state.run_id = None
+                st.rerun()
+
+    elif state == "completed_with_errors":
+        st.warning("⚠️ Validation completed with some errors")
+        st.progress(1.0)
+
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("📋 View Results", type="primary", use_container_width=True):
+                st.session_state.processing = False
+                st.session_state.selected_case = app_ref
+                st.rerun()
+        with col2:
+            if st.button("🆕 New Application", use_container_width=True):
+                st.session_state.processing = False
+                st.session_state.run_id = None
+                st.rerun()
+
+    elif state == "failed":
+        st.error("❌ Processing failed")
+
+        error_msg = status.get("error", "Unknown error")
+        st.error(f"**Error:** {error_msg}")
+
+        if status.get("traceback"):
+            with st.expander("View Error Details"):
+                st.code(status.get("traceback"), language="text")
+
+        if st.button("🆕 Start Over", type="primary"):
+            st.session_state.processing = False
+            st.session_state.run_id = None
+            st.rerun()
+
+    elif state == "not_found":
+        st.error(f"❌ Run {run_id} not found")
+        if st.button("🆕 Start Over", type="primary"):
+            st.session_state.processing = False
+            st.session_state.run_id = None
+            st.rerun()
+
+    else:
+        st.warning(f"Unknown state: {state}")
+        if st.button("🔄 Refresh"):
+            st.rerun()
 
 
 def render():
@@ -103,33 +160,31 @@ def render():
             st.error("❌ Please upload at least one PDF document")
         else:
             # Start processing
-            st.session_state.processing = True
-            st.session_state.current_app_ref = app_ref
-            
-            try:
-                # Save files and start run
-                from planproof.ui.run_orchestrator import start_run
-                
-                temp_dir = Path(tempfile.mkdtemp())
-                file_paths = []
-                
-                for uploaded_file in uploaded_files:
-                    file_path = temp_dir / uploaded_file.name
-                    with open(file_path, "wb") as f:
-                        f.write(uploaded_file.read())
-                    file_paths.append(str(file_path))
-                
-                # Start the validation run
-                run_id = start_run(
-                    pdf_paths=file_paths,
-                    application_ref=app_ref,
-                    applicant_name=applicant_name or None,
-                    parent_submission_id=None  # New application
-                )
-                
-                st.session_state.current_run_id = run_id
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"❌ Error starting validation: {str(e)}")
-                st.session_state.processing = False
+            with st.spinner("Starting validation..."):
+                try:
+                    # Start the validation run
+                    from planproof.ui.run_orchestrator import start_run
+
+                    # Pass UploadedFile objects directly (not file paths!)
+                    run_id = start_run(
+                        app_ref=app_ref,  # Correct parameter name
+                        files=list(uploaded_files),  # Correct parameter name and type
+                        applicant_name=applicant_name if applicant_name else None,
+                        parent_submission_id=None  # New application
+                    )
+
+                    # Store run ID in session state
+                    st.session_state.run_id = run_id  # Use consistent key
+                    st.session_state.current_run_id = run_id  # Also set this for compatibility
+                    st.session_state.current_app_ref = app_ref
+                    st.session_state.processing = True
+
+                    st.success(f"✅ Validation started! Run ID: {run_id}")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error starting validation: {str(e)}")
+                    st.session_state.processing = False
+                    import traceback
+                    with st.expander("Error Details"):
+                        st.code(traceback.format_exc())
