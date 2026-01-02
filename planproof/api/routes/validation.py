@@ -247,16 +247,14 @@ async def get_run_results(
                 detail="No document associated with this run"
             )
         
-        # Get documents for this run
+        document = session.query(Document).filter(Document.id == run.document_id).first()
         documents = []
-        if run.document_id:
-            doc = session.query(Document).filter(Document.id == run.document_id).first()
-            if doc:
-                documents.append({
-                    "document_name": doc.filename,
-                    "document_type": doc.document_type or "Unknown",
-                    "status": "processed" if run.status == "completed" else "pending"
-                })
+        if document:
+            documents.append({
+                "document_name": document.filename,
+                "document_type": document.document_type or "Unknown",
+                "status": "processed" if run.status == "completed" else "pending"
+            })
         
         checks = session.query(ValidationCheck).filter(
             ValidationCheck.document_id == run.document_id
@@ -269,22 +267,19 @@ async def get_run_results(
             # Map ValidationCheck status enum to string
             status_str = check.status.value if hasattr(check.status, 'value') else str(check.status)
             
-            # Map status to proper severity
-            if status_str.lower() in ["fail", "failed", "critical", "blocker"]:
-                severity = "critical"
-            elif status_str.lower() in ["warning", "needs_review"]:
-                severity = "warning"
-            else:
-                severity = "info"
+            severity = None
+            if check.rule and check.rule.severity:
+                severity = check.rule.severity
             
             findings.append({
+                "id": check.id,
                 "rule_id": check.rule_id_string or str(check.rule_id),
                 "title": check.rule_id_string or str(check.rule_id),
                 "status": status_str,
-                "severity": severity,
+                "severity": severity or "info",
                 "message": check.explanation or "",
                 "evidence": check.evidence_ids or [],
-                "details": {},
+                "details": check.rule.rule_config if check.rule and check.rule.rule_config else None,
                 "document_name": document.filename if document else None
             })
             
@@ -299,21 +294,18 @@ async def get_run_results(
                 summary["needs_review"] += 1
         
         # Get document details to show extracted fields
-        document = None
         extracted_fields = {}
-        if run.document_id:
-            document = session.query(Document).filter(Document.id == run.document_id).first()
-            if document:
-                # Get extraction artefact to show extracted fields
-                extraction_artefact = session.query(Artefact).filter(
-                    Artefact.document_id == document.id,
-                    Artefact.artefact_type == "extraction"
-                ).first()
-                
-                if extraction_artefact and extraction_artefact.blob_uri:
-                    # Note: In production, would fetch from blob storage
-                    # For now, just indicate it exists
-                    extracted_fields = {"note": "Extraction data available at blob storage"}
+        if document:
+            # Get extraction artefact to show extracted fields
+            extraction_artefact = session.query(Artefact).filter(
+                Artefact.document_id == document.id,
+                Artefact.artefact_type == "extraction"
+            ).first()
+            
+            if extraction_artefact and extraction_artefact.blob_uri:
+                # Note: In production, would fetch from blob storage
+                # For now, just indicate it exists
+                extracted_fields = {"note": "Extraction data available at blob storage"}
         
         # Count LLM calls from artefacts
         llm_count = 0

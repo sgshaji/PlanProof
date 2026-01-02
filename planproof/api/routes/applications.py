@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 from planproof.api.dependencies import get_db, get_current_user
-from planproof.db import Database, Application, Submission, Run, Document, ValidationCheck
+from planproof.db import Database, Application, Submission, Run, Document, ValidationCheck, ExtractedField
 
 router = APIRouter()
 
@@ -208,15 +208,35 @@ async def get_application_details(
                 }
             })
         
+        latest_submission = session.query(Submission).filter(
+            Submission.planning_case_id == application_id
+        ).order_by(Submission.created_at.desc()).first()
+
+        def _get_latest_field_value(field_names: List[str]) -> Optional[str]:
+            if not latest_submission:
+                return None
+            field = session.query(ExtractedField).filter(
+                ExtractedField.submission_id == latest_submission.id,
+                ExtractedField.field_name.in_(field_names)
+            ).order_by(
+                ExtractedField.confidence.desc().nullslast(),
+                ExtractedField.created_at.desc()
+            ).first()
+            return field.field_value if field else None
+
+        extracted_address = _get_latest_field_value(["site_address", "address"])
+        extracted_proposal = _get_latest_field_value(["proposal_description", "proposed_use"])
+        extracted_applicant = _get_latest_field_value(["applicant_name"])
+
         # Determine overall status from latest run
         latest_status = runs[0].status if runs else "unknown"
         
         return {
             "id": app.id,
             "reference_number": app.application_ref,
-            "address": "Not available",
-            "proposal": "Planning Application",
-            "applicant_name": app.applicant_name or "Unknown",
+            "address": extracted_address or "Not available",
+            "proposal": extracted_proposal or "Not available",
+            "applicant_name": app.applicant_name or extracted_applicant or "Unknown",
             "created_at": app.created_at.isoformat() if app.created_at else None,
             "status": latest_status,
             "run_history": run_history
