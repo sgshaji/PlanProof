@@ -285,10 +285,14 @@ async def upload_document(
     )
 
 
-@router.post("/applications/{application_ref}/documents/batch")
+@router.post(
+    "/applications/{application_ref}/documents/batch",
+    response_model=BatchDocumentUploadResponse
+)
 async def upload_documents_batch(
     application_ref: str,
-    files: List[UploadFile] = File(..., description="PDF files to upload"),
+    files: Optional[List[UploadFile]] = File(None, description="PDF files to upload"),
+    documents: Optional[List[UploadFile]] = File(None, description="PDF files to upload"),
     document_type: Optional[str] = Form(None, description="Document type (application_form, site_plan, etc.)"),
     db: Database = Depends(get_db),
     storage: StorageClient = Depends(get_storage_client),
@@ -299,10 +303,18 @@ async def upload_documents_batch(
     """
     Upload multiple PDF documents for processing in a single run.
     """
-    if not files:
+    if files and documents:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide files or documents, not both"
+        )
+
+    uploads = documents or files or []
+
+    if not uploads:
         raise HTTPException(status_code=400, detail="No files provided")
 
-    for upload in files:
+    for upload in uploads:
         if not upload.filename.lower().endswith(".pdf"):
             raise HTTPException(
                 status_code=400,
@@ -318,7 +330,7 @@ async def upload_documents_batch(
         application_id=application.id,
         metadata={
             "application_ref": application_ref,
-            "file_count": len(files),
+            "file_count": len(uploads),
             "document_type": document_type,
             "source": "api"
         }
@@ -326,7 +338,7 @@ async def upload_documents_batch(
 
     responses: List[DocumentUploadResponse] = []
     try:
-        for file in files:
+        for file in uploads:
             responses.append(
                 await _process_document_for_run(
                     run=run,
