@@ -17,7 +17,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from planproof.config import get_settings
-from .routes import applications, documents, validation, health, runs
+from .routes import applications, documents, validation, health, runs, review
 
 settings = get_settings()
 
@@ -59,6 +59,7 @@ app.include_router(applications.router, prefix="/api/v1", tags=["Applications"])
 app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
 app.include_router(validation.router, prefix="/api/v1", tags=["Validation"])
 app.include_router(runs.router, prefix="/api/v1", tags=["Runs"])
+app.include_router(review.router, prefix="/api/v1", tags=["Review"])
 
 
 # Global exception handler

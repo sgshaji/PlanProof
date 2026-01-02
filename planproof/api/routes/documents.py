@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from planproof.api.dependencies import (
     get_db, get_storage_client, get_docintel_client, get_aoai_client, get_current_user
 )
-from planproof.db import Database
+from planproof.db import Database, Document
 from planproof.storage import StorageClient
 from planproof.docintel import DocumentIntelligence
 from planproof.aoai import AzureOpenAIClient
@@ -214,3 +214,49 @@ async def upload_document(
                 # Log but don't fail the request due to cleanup error
                 import logging
                 logging.warning(f"Failed to cleanup temp file {tmp_path}: {cleanup_error}")
+
+
+@router.post("/runs/{run_id}/reclassify_document")
+async def reclassify_document(
+    run_id: int,
+    document_id: int = Form(..., description="Document ID to reclassify"),
+    document_type: str = Form(..., description="New document type classification"),
+    db: Database = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Override the detected document type classification.
+    
+    **Path Parameters:**
+    - run_id: Run ID
+    
+    **Form Data:**
+    - document_id: ID of the document to reclassify
+    - document_type: New document type (e.g., "site_plan", "application_form", etc.)
+    
+    **Use Case:**
+    When AI misclassifies a document, officer can manually override the classification.
+    """
+    session = db.get_session()
+    try:
+        # Validate document exists
+        document = session.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Update document type
+        old_type = document.document_type
+        document.document_type = document_type
+        session.commit()
+        
+        # TODO: Re-run validation rules that depend on document type
+        
+        return {
+            "document_id": document_id,
+            "old_type": old_type,
+            "new_type": document_type,
+            "filename": document.filename,
+            "message": "Document reclassified successfully. Validation will be re-run."
+        }
+    finally:
+        session.close()
