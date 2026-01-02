@@ -89,17 +89,20 @@ export default function Results() {
   const summary = results.summary || {};
   const findings = results.findings || [];
 
-  // Group findings by severity
-  const criticalFindings = findings.filter((f: any) => f.severity === 'critical' || f.severity === 'blocker');
+  // Group findings by severity/status
+  const criticalFindings = findings.filter((f: any) =>
+    ['critical', 'blocker', 'error'].includes(f.severity)
+  );
   const warningFindings = findings.filter((f: any) => f.severity === 'warning');
-  const infoFindings = findings.filter((f: any) => f.severity === 'info' || f.severity === 'needs_review');
+  const needsReviewFindings = findings.filter((f: any) => f.status === 'needs_review');
+  const infoFindings = findings.filter((f: any) => f.severity === 'info' && f.status !== 'needs_review');
 
   // Get unique documents
   const documents = results.documents || [];
-  const hasReviewableFindings = infoFindings.length > 0;
+  const hasReviewableFindings = needsReviewFindings.length > 0;
 
   const getSeverityIcon = (severity: string) => {
-    if (severity === 'critical' || severity === 'blocker') return <Error color="error" />;
+    if (['critical', 'blocker', 'error'].includes(severity)) return <Error color="error" />;
     if (severity === 'warning') return <Warning color="warning" />;
     return <Info color="info" />;
   };
@@ -172,7 +175,7 @@ export default function Results() {
           <Grid item xs={6} md={3}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography variant="h4" color="info.main">
-                {infoFindings.length}
+                {needsReviewFindings.length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Needs Review
@@ -313,14 +316,50 @@ export default function Results() {
         </Paper>
       )}
 
-      {/* Info/Needs Review Findings */}
+      {/* Info Findings */}
       {infoFindings.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom color="info.main">
-            Needs Human Review ({infoFindings.length})
+            Informational ({infoFindings.length})
           </Typography>
           <Stack spacing={2}>
             {infoFindings.map((finding: any, index: number) => (
+              <Box
+                key={index}
+                sx={{
+                  p: 2,
+                  border: '1px solid',
+                  borderColor: 'info.main',
+                  borderRadius: 1,
+                  borderLeft: '4px solid',
+                  borderLeftColor: 'info.main',
+                }}
+              >
+                <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+                  {getSeverityIcon(finding.severity)}
+                  <Chip label={finding.severity} color="info" size="small" />
+                  <Chip label={finding.rule_id} size="small" variant="outlined" />
+                  {finding.document_name && (
+                    <Chip label={finding.document_name} size="small" icon={<Description />} />
+                  )}
+                </Box>
+                <Typography variant="body1" gutterBottom>
+                  {finding.message}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </Paper>
+      )}
+
+      {/* Needs Review Findings */}
+      {needsReviewFindings.length > 0 && (
+        <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom color="info.main">
+            Needs Human Review ({needsReviewFindings.length})
+          </Typography>
+          <Stack spacing={2}>
+            {needsReviewFindings.map((finding: any, index: number) => (
               <Box
                 key={index}
                 sx={{

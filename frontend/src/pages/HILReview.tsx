@@ -85,7 +85,7 @@ const HILReview: React.FC = () => {
       // Load run results to get findings
       const results = await api.getRunResults(parseInt(runId));
       const reviewableFindings = (results.findings || []).filter(
-        (f: any) => f.severity === 'info' || f.severity === 'needs_review'
+        (f: any) => f.status === 'needs_review'
       );
       setFindings(reviewableFindings);
 
