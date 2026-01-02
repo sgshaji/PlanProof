@@ -4,7 +4,7 @@ Document Upload & Management Endpoints
 
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
@@ -35,6 +35,15 @@ class DocumentUploadResponse(BaseModel):
     message: str
 
 
+class BatchDocumentUploadResponse(BaseModel):
+    """Response after batch document upload."""
+    run_id: int
+    application_ref: str
+    status: str
+    documents: List[DocumentUploadResponse]
+    message: str
+
+
 async def _process_document_upload(
     application_ref: str,
     file: UploadFile,
@@ -56,8 +65,6 @@ async def _process_document_upload(
             detail="Only PDF files are supported"
         )
 
-    settings = get_settings()
-
     # Create run record
     run = db.create_run(
         run_type=run_type,
@@ -71,6 +78,46 @@ async def _process_document_upload(
             "is_modification": parent_submission_id is not None
         }
     )
+
+    try:
+        response = await _process_document_for_run(
+            run=run,
+            application_ref=application_ref,
+            file=file,
+            db=db,
+            storage=storage,
+            docintel=docintel,
+            aoai=aoai,
+            document_type=document_type,
+            application_id=application_id,
+            parent_submission_id=parent_submission_id,
+            applicant_name=applicant_name
+        )
+        db.update_run(run.id, status="completed")
+        return response
+    except HTTPException as exc:
+        db.update_run(run.id, status="failed", error_message=str(exc.detail))
+        raise
+    except Exception as exc:
+        db.update_run(run.id, status="failed", error_message=str(exc))
+        raise
+
+
+async def _process_document_for_run(
+    run,
+    application_ref: str,
+    file: UploadFile,
+    db: Database,
+    storage: StorageClient,
+    docintel: DocumentIntelligence,
+    aoai: AzureOpenAIClient,
+    document_type: Optional[str] = None,
+    application_id: Optional[int] = None,
+    parent_submission_id: Optional[int] = None,
+    applicant_name: Optional[str] = None
+) -> DocumentUploadResponse:
+    """Process a document upload within an existing run."""
+    settings = get_settings()
 
     # Save uploaded file to temp location
     tmp_path = None
@@ -168,9 +215,6 @@ async def _process_document_upload(
                 metadata={"run_id": run.id}
             )
 
-        # Update run status
-        db.update_run(run.id, status="completed")
-
         return DocumentUploadResponse(
             run_id=run.id,
             document_id=ingested["document_id"],
@@ -182,9 +226,6 @@ async def _process_document_upload(
         )
 
     except Exception as e:
-        # Update run with error
-        db.update_run(run.id, status="failed", error_message=str(e))
-
         raise HTTPException(
             status_code=500,
             detail=f"Document processing failed: {str(e)}"
@@ -241,6 +282,80 @@ async def upload_document(
         docintel=docintel,
         aoai=aoai,
         document_type=document_type
+    )
+
+
+@router.post("/applications/{application_ref}/documents/batch")
+async def upload_documents_batch(
+    application_ref: str,
+    files: List[UploadFile] = File(..., description="PDF files to upload"),
+    document_type: Optional[str] = Form(None, description="Document type (application_form, site_plan, etc.)"),
+    db: Database = Depends(get_db),
+    storage: StorageClient = Depends(get_storage_client),
+    docintel: DocumentIntelligence = Depends(get_docintel_client),
+    aoai: AzureOpenAIClient = Depends(get_aoai_client),
+    user: dict = Depends(get_current_user)
+) -> BatchDocumentUploadResponse:
+    """
+    Upload multiple PDF documents for processing in a single run.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    for upload in files:
+        if not upload.filename.lower().endswith(".pdf"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Only PDF files are supported (invalid: {upload.filename})"
+            )
+
+    application = db.get_application_by_ref(application_ref)
+    if application is None:
+        application = db.create_application(application_ref=application_ref)
+
+    run = db.create_run(
+        run_type="api_batch",
+        application_id=application.id,
+        metadata={
+            "application_ref": application_ref,
+            "file_count": len(files),
+            "document_type": document_type,
+            "source": "api"
+        }
+    )
+
+    responses: List[DocumentUploadResponse] = []
+    try:
+        for file in files:
+            responses.append(
+                await _process_document_for_run(
+                    run=run,
+                    application_ref=application_ref,
+                    file=file,
+                    db=db,
+                    storage=storage,
+                    docintel=docintel,
+                    aoai=aoai,
+                    document_type=document_type,
+                    application_id=application.id,
+                    parent_submission_id=None,
+                    applicant_name=None
+                )
+            )
+        db.update_run(run.id, status="completed", metadata={"processed_count": len(responses)})
+    except HTTPException as exc:
+        db.update_run(run.id, status="failed", error_message=str(exc.detail))
+        raise
+    except Exception as exc:
+        db.update_run(run.id, status="failed", error_message=str(exc))
+        raise HTTPException(status_code=500, detail=f"Batch processing failed: {str(exc)}")
+
+    return BatchDocumentUploadResponse(
+        run_id=run.id,
+        application_ref=application_ref,
+        status="completed",
+        documents=responses,
+        message="Documents processed successfully"
     )
 
 
