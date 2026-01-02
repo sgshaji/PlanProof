@@ -44,6 +44,12 @@ class BatchDocumentUploadResponse(BaseModel):
     message: str
 
 
+class ReclassifyDocumentRequest(BaseModel):
+    """Request payload to reclassify a document."""
+    document_id: int
+    document_type: str
+
+
 async def _process_document_upload(
     application_ref: str,
     file: UploadFile,
@@ -424,8 +430,7 @@ async def upload_application_run(
 @router.post("/runs/{run_id}/reclassify_document")
 async def reclassify_document(
     run_id: int,
-    document_id: int = Form(..., description="Document ID to reclassify"),
-    document_type: str = Form(..., description="New document type classification"),
+    payload: ReclassifyDocumentRequest,
     db: Database = Depends(get_db),
     user: dict = Depends(get_current_user)
 ):
@@ -435,7 +440,7 @@ async def reclassify_document(
     **Path Parameters:**
     - run_id: Run ID
     
-    **Form Data:**
+    **Body:**
     - document_id: ID of the document to reclassify
     - document_type: New document type (e.g., "site_plan", "application_form", etc.)
     
@@ -445,21 +450,21 @@ async def reclassify_document(
     session = db.get_session()
     try:
         # Validate document exists
-        document = session.query(Document).filter(Document.id == document_id).first()
+        document = session.query(Document).filter(Document.id == payload.document_id).first()
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
         # Update document type
         old_type = document.document_type
-        document.document_type = document_type
+        document.document_type = payload.document_type
         session.commit()
         
         # TODO: Re-run validation rules that depend on document type
         
         return {
-            "document_id": document_id,
+            "document_id": payload.document_id,
             "old_type": old_type,
-            "new_type": document_type,
+            "new_type": payload.document_type,
             "filename": document.filename,
             "message": "Document reclassified successfully. Validation will be re-run."
         }
