@@ -1,53 +1,100 @@
-# PlanProof Documentation
+# Documentation Index
 
-Complete documentation for the PlanProof AI-Powered Planning Application Validation System.
+This directory contains comprehensive documentation for the PlanProof system.
 
-## 📚 Documentation Index
+## Quick Navigation
 
-### Getting Started
-- **[Setup Guide](setup_guide.md)** - Installation and configuration instructions
-- **[Architecture](ARCHITECTURE.md)** - System design and component overview
-- **[API Reference](API.md)** - CLI commands and Python API documentation
+### 📋 Getting Started
+- **[../README.md](../README.md)** - Project overview and quick start
+- **[../QUICKSTART.md](../QUICKSTART.md)** - 5-minute setup guide
+- **[setup_guide.md](setup_guide.md)** - Detailed setup instructions
 
-### Development
-- **[Contributing Guide](CONTRIBUTING.md)** - Development setup and contribution guidelines
-- **[Enhanced Issue Model](ENHANCED_ISSUE_MODEL.md)** - Specification for the enhanced validation issue format
-- **[Part 2 Implementation](PART_2_COMPLETE.md)** - UI components for enhanced issues (completed)
-- **[Part 3 Implementation](PART_3_COMPLETE.md)** - Resolution tracking and auto-recheck (completed)
+### 🏗️ Architecture & Design
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview
+- **[API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md)** - REST API documentation
+- **[QUERY_GUIDE.md](QUERY_GUIDE.md)** - Database query patterns
+- **[NEW_UI_IMPLEMENTATION.md](NEW_UI_IMPLEMENTATION.md)** - UI architecture
+- **[ENHANCED_ISSUE_MODEL.md](ENHANCED_ISSUE_MODEL.md)** - Validation issue format
 
-### Operations
-- **[Deployment](DEPLOYMENT.md)** - Production deployment guide
-- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
-- **[Error Troubleshooting](ERROR_TROUBLESHOOTING.md)** - Error tracking and debugging guide
-- **[Performance Guide](PERFORMANCE_TROUBLESHOOTING.md)** - Performance optimization and tuning
-- **[Query Guide](QUERY_GUIDE.md)** - Database query examples and patterns
+### 🚀 Deployment
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Production deployment guide
+- **[deployment/](deployment/)** - Deployment-specific documentation
+  - Infrastructure as Code templates
+  - Container orchestration configs
+  - CI/CD pipeline documentation
 
-## 🚀 Quick Links
+### 🛠️ Development
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contributing guidelines
+- **[../CHANGELOG.md](../CHANGELOG.md)** - Version history and changes
+- **[PART_2_COMPLETE.md](PART_2_COMPLETE.md)** - UI components implementation
+- **[PART_3_COMPLETE.md](PART_3_COMPLETE.md)** - Resolution tracking implementation
 
-### For Developers
-1. Start with [Setup Guide](setup_guide.md)
-2. Review [Architecture](ARCHITECTURE.md) to understand the system
-3. Read [Contributing Guide](CONTRIBUTING.md) before making changes
+### 🔧 Troubleshooting & Maintenance
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Common issues and solutions
+- **[DATABASE_CONNECTION_FIX.md](DATABASE_CONNECTION_FIX.md)** - Database troubleshooting
+- **[ERROR_TROUBLESHOOTING.md](ERROR_TROUBLESHOOTING.md)** - Error tracking and debugging
+- **[PERFORMANCE_TROUBLESHOOTING.md](PERFORMANCE_TROUBLESHOOTING.md)** - Performance optimization
 
-### For Operators
-1. See [Deployment](DEPLOYMENT.md) for production setup
-2. Use [Troubleshooting](TROUBLESHOOTING.md) for common issues
-3. Check [Performance Guide](PERFORMANCE_TROUBLESHOOTING.md) for optimization
+### 📊 Reports & Analysis
+- **[reports/](reports/)** - Generated reports and analysis
+  - Code quality reviews
+  - Performance benchmarks
+  - Production readiness assessments
 
-### For Feature Development
-1. Review [Enhanced Issue Model](ENHANCED_ISSUE_MODEL.md) for validation issue structure
-2. See implementation notes in [Part 2](PART_2_COMPLETE.md) and [Part 3](PART_3_COMPLETE.md)
-3. Consult [API Reference](API.md) for available interfaces
-
-## 📖 Document Descriptions
+## Document Catalog
 
 ### Core Documentation
 
-**Setup Guide** - Step-by-step instructions for setting up the development environment, including PostgreSQL, Azure services, Python dependencies, and environment configuration.
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design and components | Developers, Architects |
+| [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) | REST API reference | API consumers, Frontend devs |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment | DevOps, SREs |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow | Contributors |
+| [setup_guide.md](setup_guide.md) | Installation and configuration | New developers |
 
-**Architecture** - High-level system design, component interactions, data flow, and technology stack. Essential reading for understanding how PlanProof works.
+### Technical Guides
 
-**API Reference** - Complete reference for CLI commands, Python API, configuration options, and programmatic interfaces.
+| Document | Purpose | When to Use |
+|----------|---------|-------------|
+| [QUERY_GUIDE.md](QUERY_GUIDE.md) | Database query patterns | Writing complex queries |
+| [DATABASE_CONNECTION_FIX.md](DATABASE_CONNECTION_FIX.md) | DB troubleshooting | Connection issues |
+| [NEW_UI_IMPLEMENTATION.md](NEW_UI_IMPLEMENTATION.md) | UI architecture | Working on frontend |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Common issues | Debugging problems |
+| [ENHANCED_ISSUE_MODEL.md](ENHANCED_ISSUE_MODEL.md) | Validation format | Working on validation |
+
+### Generated Reports
+
+Reports in `reports/` are generated from automated analysis:
+- **CODE_REVIEW_REPORT.md** - Comprehensive code quality analysis
+- **PRODUCTION_HARDENING_SUMMARY.md** - Production readiness assessment
+
+> ⚠️ **Note:** Reports may be regenerated and should not be manually edited.
+
+## Quick Links by Role
+
+### New Developer
+1. [../README.md](../README.md) - Project overview
+2. [../QUICKSTART.md](../QUICKSTART.md) - Quick setup
+3. [setup_guide.md](setup_guide.md) - Detailed setup
+4. [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute
+5. [ARCHITECTURE.md](ARCHITECTURE.md) - System design
+
+### DevOps Engineer
+1. [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment guide
+2. [deployment/](deployment/) - Infrastructure docs
+3. [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - Issue resolution
+4. [reports/PRODUCTION_HARDENING_SUMMARY.md](reports/PRODUCTION_HARDENING_SUMMARY.md) - Production setup
+
+### API Consumer
+1. [API_INTEGRATION_GUIDE.md](API_INTEGRATION_GUIDE.md) - API reference
+2. [ARCHITECTURE.md](ARCHITECTURE.md) - System overview
+3. [../QUICKSTART.md](../QUICKSTART.md) - Quick start
+
+### Database Administrator
+1. [QUERY_GUIDE.md](QUERY_GUIDE.md) - Query patterns
+2. [DATABASE_CONNECTION_FIX.md](DATABASE_CONNECTION_FIX.md) - Troubleshooting
+3. [../scripts/db/](../scripts/db/) - DB management scripts
 
 ### Development Documentation
 

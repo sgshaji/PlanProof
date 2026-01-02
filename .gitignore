@@ -2,7 +2,14 @@
 .env
 .env.local
 .env.*.local
-*.env
+.env.production
+.env.staging
+.env.test
+config/.env
+config/.env.*
+!.env.example
+!config/.env.example
+!config/production.env.example
 
 # Python
 __pycache__/
@@ -135,6 +142,8 @@ docker-compose.override.yml
 # Documentation builds
 docs/_build/
 docs/.doctrees/
+docs/reports/*.md
+!docs/reports/.gitkeep
 site/
 
 # Secrets & Keys

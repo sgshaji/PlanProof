@@ -279,19 +279,46 @@ planproof/
 │   ├── api/               # REST API routes
 │   ├── pipeline/          # Document processing pipeline
 │   ├── ui/                # Streamlit web interface
+│   ├── services/          # Business services layer
 │   ├── db.py              # Database models & ORM
 │   ├── storage.py         # Azure Blob Storage client
 │   ├── docintel.py        # Azure Document Intelligence
-│   └── aoai.py            # Azure OpenAI client
-├── tests/                 # Test suite
-│   ├── unit/              # Unit tests
-│   └── integration/       # Integration tests
+│   ├── aoai.py            # Azure OpenAI client
+│   ├── secrets_manager.py # Production secrets management (Key Vault)
+│   ├── alerting.py        # Multi-channel alerting system
+│   ├── health_monitor.py  # System health monitoring
+│   └── config.py          # Configuration management
+├── tests/                 # Test suite (382 tests)
+│   ├── unit/              # Unit tests (fast, isolated)
+│   ├── integration/       # Integration tests (require services)
+│   ├── golden/            # Snapshot/approval tests
+│   ├── fixtures/          # Test data
+│   └── conftest.py        # Pytest configuration
 ├── docs/                  # Documentation
+│   ├── reports/           # Generated analysis reports
+│   ├── deployment/        # Deployment guides
+│   └── *.md               # Technical documentation
+├── config/                # Configuration templates
+│   ├── .env.example       # Development config
+│   └── production.env.example  # Production config template
+├── scripts/               # Utility scripts
+│   ├── manual-tests/      # Manual test scripts
+│   ├── db/                # Database management
+│   ├── analysis/          # Analysis scripts
+│   └── utilities/         # Development utilities
 ├── alembic/               # Database migrations
 ├── artefacts/             # Rule catalogs & configs
-├── scripts/               # Utility scripts
-└── run_ui.py             # Streamlit entry point
+├── run_ui.py              # Streamlit entry point
+├── run_api.py             # FastAPI entry point
+└── pyproject.toml         # Project configuration
 ```
+
+**Key Directories:**
+- **[planproof/](planproof/)** - Core application code (pipeline, API, UI, services)
+- **[tests/](tests/)** - 382 automated tests ([README](tests/README.md))
+- **[docs/](docs/)** - Comprehensive documentation ([Index](docs/README.md))
+- **[config/](config/)** - Environment configs ([Guide](config/README.md))
+- **[scripts/](scripts/)** - Development utilities ([README](scripts/README.md))
 
 ### Running Tests
 
@@ -417,13 +444,19 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 **Current Version**: 1.0.0 (Production Ready)
 
 **Recent Updates**:
+- ✅ **Production Hardening** - Azure Key Vault secrets management
+- ✅ **Multi-Channel Alerting** - Email, Azure Monitor, Webhooks, Logs
+- ✅ **Health Monitoring** - System metrics and component health checks
+- ✅ **Test Suite** - 382 automated tests with 85%+ coverage
 - ✅ Complete REST API implementation
 - ✅ New UI with modification tracking (V0 → V1 → V2)
 - ✅ Database connection fixes (psycopg v3)
 - ✅ Delta visualization for application changes
-- ✅ Comprehensive documentation
+- ✅ Comprehensive documentation and repository organization
 
-**Test Coverage**: 85%
+**Test Coverage**: 85%+ (382 tests)
+**Code Quality**: 84.1/100 (B+) - [View Report](docs/reports/CODE_REVIEW_REPORT.md)
+**Production Readiness**: Hardened - [View Summary](docs/reports/PRODUCTION_HARDENING_SUMMARY.md)
 
 ---
 
