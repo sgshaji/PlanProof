@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 from planproof.api.dependencies import get_db, get_current_user
-from planproof.db import Database, Application, Submission, Run
+from planproof.db import Database, Application, Submission, Run, Document, ValidationCheck
 
 router = APIRouter()
 
@@ -140,6 +140,100 @@ async def get_application(
                 }
                 for sub in submissions
             ]
+        }
+    finally:
+        session.close()
+
+
+@router.get("/applications/id/{application_id}")
+async def get_application_details(
+    application_id: int,
+    db: Database = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get full application details with run history by ID.
+    
+    **Path Parameters:**
+    - application_id: Application database ID
+    
+    **Returns:**
+    - Application metadata
+    - List of all runs with documents and validation summary
+    """
+    session = db.get_session()
+    try:
+        app = session.query(Application).filter(Application.id == application_id).first()
+        
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Get all runs for this application (most recent first)
+        runs = session.query(Run).filter(
+            Run.application_id == application_id
+        ).order_by(Run.started_at.desc()).all()
+        
+        run_history = []
+        for run in runs:
+            # Get documents for this run
+            documents = session.query(Document).filter(
+                Document.id == run.document_id
+            ).all() if run.document_id else []
+            
+            # Count validation checks by status
+            checks_pass = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id == run.document_id,
+                ValidationCheck.status == 'pass'
+            ).scalar() if run.document_id else 0
+            
+            checks_fail = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id == run.document_id,
+                ValidationCheck.status == 'fail'
+            ).scalar() if run.document_id else 0
+            
+            checks_warning = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id == run.document_id,
+                ValidationCheck.status == 'warning'
+            ).scalar() if run.document_id else 0
+            
+            checks_needs_review = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id == run.document_id,
+                ValidationCheck.status == 'needs_review'
+            ).scalar() if run.document_id else 0
+            
+            run_history.append({
+                "run_id": run.id,
+                "run_type": run.run_type,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+                "status": run.status,
+                "error_message": run.error_message,
+                "document_count": len(documents),
+                "documents": [
+                    {
+                        "id": doc.id,
+                        "filename": doc.filename,
+                        "page_count": doc.page_count,
+                        "document_type": doc.document_type
+                    } for doc in documents
+                ],
+                "validation_summary": {
+                    "pass": checks_pass,
+                    "fail": checks_fail,
+                    "warning": checks_warning,
+                    "needs_review": checks_needs_review
+                }
+            })
+        
+        return {
+            "id": app.id,
+            "application_ref": app.application_ref,
+            "applicant_name": app.applicant_name,
+            "application_date": app.application_date.isoformat() if app.application_date else None,
+            "created_at": app.created_at.isoformat() if app.created_at else None,
+            "updated_at": app.updated_at.isoformat() if app.updated_at else None,
+            "run_count": len(runs),
+            "runs": run_history
         }
     finally:
         session.close()

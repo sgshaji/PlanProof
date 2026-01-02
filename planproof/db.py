@@ -358,7 +358,7 @@ class Run(Base):
     application_id = Column(Integer, ForeignKey("applications.id"), nullable=True, index=True)
     started_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
-    status = Column(String(50), nullable=False, default="running")  # running, completed, failed, completed_with_errors
+    status = Column(String(50), nullable=False, default="running")  # running, completed, failed, reviewed, completed_with_errors
     error_message = Column(Text, nullable=True)
     run_metadata = Column(JSON, nullable=True)  # Additional run context (renamed from metadata to avoid SQLAlchemy conflict)
 
@@ -388,6 +388,23 @@ class IssueResolution(Base):
     # Relationships
     run = relationship("Run", back_populates="issue_resolutions")
     actions = relationship("ResolutionAction", back_populates="issue_resolution", cascade="all, delete-orphan")
+
+
+class ReviewDecision(Base):
+    """Human-in-Loop review decisions for validation findings."""
+    __tablename__ = "review_decisions"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    validation_check_id = Column(Integer, ForeignKey("validation_checks.id"), nullable=False, index=True)
+    run_id = Column(Integer, ForeignKey("runs.id"), nullable=False, index=True)
+    reviewer_id = Column(String(255), nullable=False)  # User ID or email of reviewer
+    decision = Column(String(50), nullable=False)  # accept, reject, need_info
+    comment = Column(Text, nullable=True)  # Reviewer's explanation
+    reviewed_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    
+    # Relationships
+    validation_check = relationship("ValidationCheck")
+    run = relationship("Run")
     recheck_history = relationship("RecheckHistory", back_populates="issue_resolution", cascade="all, delete-orphan")
 
 
