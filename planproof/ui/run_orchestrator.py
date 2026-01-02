@@ -78,7 +78,7 @@ def start_run(
             "started_at": datetime.now(timezone.utc).isoformat()
         }
     )
-    run_id = run["id"]
+    run_id = run.id
     
     # Save uploaded files to temp directory
     inputs_dir, outputs_dir = _ensure_run_dirs(run_id)

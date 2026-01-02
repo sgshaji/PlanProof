@@ -27,17 +27,17 @@ def get_all_runs(
     session = db.get_session()
 
     try:
-        query = session.query(Run).order_by(Run.created_at.desc())
+        query = session.query(Run).order_by(Run.started_at.desc())
 
         # Apply filters
         if status_filter != "all":
             query = query.filter(Run.status == status_filter)
 
         if date_from:
-            query = query.filter(Run.created_at >= date_from)
+            query = query.filter(Run.started_at >= date_from)
 
         if date_to:
-            query = query.filter(Run.created_at <= date_to)
+            query = query.filter(Run.started_at <= date_to)
 
         # Get total count before pagination
         total_count = query.count()
@@ -49,14 +49,16 @@ def get_all_runs(
         result = []
         for run in runs:
             # Parse metadata
-            metadata = run.metadata or {}
+            metadata = run.run_metadata or {}
             if isinstance(metadata, str):
                 try:
                     metadata = json.loads(metadata)
                 except:
                     metadata = {}
+            elif not isinstance(metadata, dict):
+                metadata = {}
 
-            app_ref = metadata.get("application_ref", "N/A")
+            app_ref = metadata.get("application_ref", "N/A") if isinstance(metadata, dict) else "N/A"
 
             # Apply search filter
             if search_query:
@@ -72,8 +74,8 @@ def get_all_runs(
                 "application_ref": app_ref,
                 "status": run.status,
                 "run_type": run.run_type or "unknown",
-                "created_at": run.created_at,
-                "updated_at": run.updated_at,
+                "created_at": run.started_at,
+                "updated_at": run.completed_at,
                 "error_message": run.error_message,
                 "file_count": metadata.get("file_count", 0),
                 "progress": progress_info,

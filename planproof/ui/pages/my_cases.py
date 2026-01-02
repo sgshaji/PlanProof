@@ -81,7 +81,7 @@ def get_all_cases(page: int = 1, page_size: int = 20) -> tuple[List[Dict[str, An
             from planproof.db import Run
             latest_run = session.query(Run).filter(
                 Run.application_id == app.id
-            ).order_by(Run.created_at.desc()).first()
+            ).order_by(Run.started_at.desc()).first()
 
             run_id = latest_run.id if latest_run else None
 

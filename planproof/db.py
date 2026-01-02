@@ -578,6 +578,7 @@ class Database:
 
     def create_run(
         self,
+        run_type: str = "ui_single",
         application_id: Optional[int] = None,
         submission_id: Optional[int] = None,
         metadata: Optional[Dict] = None
@@ -586,9 +587,11 @@ class Database:
         session = self.get_session()
         try:
             run = Run(
+                run_type=run_type,
                 application_id=application_id,
                 submission_id=submission_id,
-                metadata=metadata or {}
+                run_metadata=metadata or {},
+                status="pending"
             )
             session.add(run)
             session.commit()
