@@ -6,7 +6,6 @@ import {
   Grid,
   Chip,
   Alert,
-  CircularProgress,
   Button,
   Stack,
   List,
@@ -19,6 +18,8 @@ import {
   AccordionDetails,
   IconButton,
   Tooltip,
+  Skeleton,
+  LinearProgress,
 } from '@mui/material';
 import {
   RateReview,
@@ -34,42 +35,92 @@ import {
   ThumbDown,
 } from '@mui/icons-material';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
 
 export default function Results() {
   const { applicationId, runId } = useParams<{ applicationId: string; runId: string }>();
   const navigate = useNavigate();
   const [results, setResults] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  const loadResults = async () => {
+  const loadResults = async (isBackground = false) => {
     if (!runId) return;
     
-    setLoading(true);
+    if (isBackground) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError('');
     try {
       const data = await api.getRunResults(parseInt(runId));
       setResults(data);
+      sessionStorage.setItem(`run-results-${runId}`, JSON.stringify(data));
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load results');
+      setError(getApiErrorMessage(err, 'Failed to load results'));
     } finally {
-      setLoading(false);
+      if (isBackground) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadResults();
+    if (!runId) return;
+    const cachedResults = sessionStorage.getItem(`run-results-${runId}`);
+    if (cachedResults) {
+      try {
+        setResults(JSON.parse(cachedResults));
+        setLoading(false);
+      } catch (err) {
+        console.warn('Failed to parse cached run results:', err);
+      }
+    }
+    loadResults(Boolean(cachedResults));
   }, [runId]);
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress />
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ flex: 1 }}>
+              <Skeleton variant="text" width="40%" height={40} />
+              <Skeleton variant="text" width="30%" />
+            </Box>
+            <Stack direction="row" spacing={2}>
+              <Skeleton variant="rounded" width={120} height={36} />
+              <Skeleton variant="rounded" width={140} height={36} />
+            </Stack>
+          </Box>
+          <Grid container spacing={2} sx={{ mt: 2 }}>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <Grid item xs={6} md={3} key={index}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Skeleton variant="text" width="40%" height={32} sx={{ mx: 'auto' }} />
+                  <Skeleton variant="text" width="60%" sx={{ mx: 'auto' }} />
+                </Box>
+              </Grid>
+            ))}
+          </Grid>
+        </Paper>
+        <Paper elevation={2} sx={{ p: 3 }}>
+          <Skeleton variant="text" width="25%" height={32} sx={{ mb: 2 }} />
+          <Stack spacing={2}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={index} variant="rounded" height={56} />
+            ))}
+          </Stack>
+        </Paper>
       </Container>
     );
   }
 
-  if (error) {
+  if (error && !results) {
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         <Alert severity="error" sx={{ mb: 2 }}>
@@ -111,6 +162,12 @@ export default function Results() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {refreshing && <LinearProgress sx={{ mb: 2 }} />}
+      {error && results && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
       {/* Header */}
       <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>

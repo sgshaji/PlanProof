@@ -18,7 +18,6 @@ import {
   UploadFile,
   Folder,
   PlaylistAddCheck,
-  Assessment,
   Dashboard as DashboardIcon,
 } from '@mui/icons-material';
 
@@ -32,7 +31,6 @@ const menuItems = [
   { text: 'New Application', icon: <UploadFile />, path: '/new-application' },
   { text: 'My Cases', icon: <Folder />, path: '/my-cases' },
   { text: 'All Runs', icon: <PlaylistAddCheck />, path: '/all-runs' },
-  { text: 'Results', icon: <Assessment />, path: '/results' },
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
 ];
 

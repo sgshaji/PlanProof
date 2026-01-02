@@ -35,6 +35,7 @@ import {
   Save,
 } from '@mui/icons-material';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
 
 const DRAWER_WIDTH = 300;
 
@@ -94,7 +95,7 @@ const HILReview: React.FC = () => {
       setReviewStatus(status);
     } catch (err: any) {
       console.error('Failed to load review data:', err);
-      setError(err.message || 'Failed to load review data');
+      setError(getApiErrorMessage(err, 'Failed to load review data'));
     } finally {
       setLoading(false);
     }
@@ -133,7 +134,7 @@ const HILReview: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to submit decision:', err);
-      setError(err.message || 'Failed to submit decision');
+      setError(getApiErrorMessage(err, 'Failed to submit decision'));
     } finally {
       setSubmitting(false);
     }
@@ -153,7 +154,7 @@ const HILReview: React.FC = () => {
       });
     } catch (err: any) {
       console.error('Failed to complete review:', err);
-      setError(err.message || 'Failed to complete review');
+      setError(getApiErrorMessage(err, 'Failed to complete review'));
     } finally {
       setSubmitting(false);
     }

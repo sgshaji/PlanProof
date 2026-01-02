@@ -20,7 +20,6 @@ function App() {
         <Route path="/applications/:applicationId/runs/:runId" element={<Results />} />
         <Route path="/applications/:applicationId/runs/:runId/review" element={<HILReview />} />
         <Route path="/all-runs" element={<AllRuns />} />
-        <Route path="/results/:runId?" element={<Results />} />
         <Route path="/dashboard" element={<Dashboard />} />
       </Routes>
     </Layout>
