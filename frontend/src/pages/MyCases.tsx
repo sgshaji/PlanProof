@@ -170,10 +170,9 @@ export default function MyCases() {
                     <Button
                       variant="outlined"
                       startIcon={<Visibility />}
-                      onClick={() => navigate(`/results/${caseItem.latest_run_id || ''}`)}
-                      disabled={!caseItem.latest_run_id}
+                      onClick={() => navigate(`/applications/${caseItem.id}`)}
                     >
-                      View Details
+                      Open Case
                     </Button>
                   </Box>
                 </CardContent>

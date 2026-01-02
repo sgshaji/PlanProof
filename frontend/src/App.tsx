@@ -6,6 +6,8 @@ import NewApplication from './pages/NewApplication';
 import MyCases from './pages/MyCases';
 import AllRuns from './pages/AllRuns';
 import Results from './pages/Results';
+import ApplicationDetails from './pages/ApplicationDetails';
+import HILReview from './pages/HILReview';
 
 function App() {
   return (
@@ -14,6 +16,9 @@ function App() {
         <Route path="/" element={<Navigate to="/new-application" replace />} />
         <Route path="/new-application" element={<NewApplication />} />
         <Route path="/my-cases" element={<MyCases />} />
+        <Route path="/applications/:applicationId" element={<ApplicationDetails />} />
+        <Route path="/applications/:applicationId/runs/:runId" element={<Results />} />
+        <Route path="/applications/:applicationId/runs/:runId/review" element={<HILReview />} />
         <Route path="/all-runs" element={<AllRuns />} />
         <Route path="/results/:runId?" element={<Results />} />
         <Route path="/dashboard" element={<Dashboard />} />

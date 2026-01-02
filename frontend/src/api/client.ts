@@ -67,6 +67,11 @@ export const api = {
     return response.data;
   },
 
+  getApplicationDetails: async (applicationId: number) => {
+    const response = await apiClient.get(`/api/v1/applications/id/${applicationId}`);
+    return response.data;
+  },
+
   // File upload
   uploadFiles: async (
     applicationRef: string,
@@ -119,6 +124,34 @@ export const api = {
   // Validation checks
   getValidationChecks: async (submissionId: number) => {
     const response = await apiClient.get(`/api/v1/submissions/${submissionId}/checks`);
+    return response.data;
+  },
+
+  // HIL Review
+  submitReviewDecision: async (runId: number, checkId: number, decision: string, comment?: string) => {
+    const response = await apiClient.post(`/api/v1/runs/${runId}/findings/${checkId}/review`, {
+      decision,
+      comment: comment || '',
+      reviewer_id: 1, // TODO: Replace with actual user ID from auth
+    });
+    return response.data;
+  },
+
+  getReviewStatus: async (runId: number) => {
+    const response = await apiClient.get(`/api/v1/runs/${runId}/review-status`);
+    return response.data;
+  },
+
+  completeReview: async (runId: number) => {
+    const response = await apiClient.post(`/api/v1/runs/${runId}/complete-review`);
+    return response.data;
+  },
+
+  reclassifyDocument: async (runId: number, documentId: number, newType: string) => {
+    const response = await apiClient.post(`/api/v1/runs/${runId}/reclassify_document`, {
+      document_id: documentId,
+      new_document_type: newType,
+    });
     return response.data;
   },
 };
