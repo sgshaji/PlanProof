@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
@@ -32,6 +32,14 @@ const APP_REF_PATTERN = /^[A-Z0-9\-\/]+$/i; // Allow alphanumeric, hyphens, slas
 
 export default function NewApplication() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationState = location.state as {
+    applicationId?: number;
+    applicationRef?: string;
+    applicantName?: string;
+  } | null;
+  const existingApplicationId = locationState?.applicationId ?? null;
+  const isVersionUpload = Boolean(existingApplicationId);
   const [applicationRef, setApplicationRef] = useState('');
   const [applicantName, setApplicantName] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -42,6 +50,7 @@ export default function NewApplication() {
   const [lastRunId, setLastRunId] = useState<number | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
+  const [loadingApplication, setLoadingApplication] = useState(false);
 
   // Check backend health function
   const checkBackendHealth = async () => {
@@ -58,6 +67,45 @@ export default function NewApplication() {
   useEffect(() => {
     checkBackendHealth();
   }, []);
+
+  useEffect(() => {
+    const loadExistingApplication = async () => {
+      if (!existingApplicationId) {
+        if (locationState?.applicationRef) {
+          setApplicationRef(locationState.applicationRef);
+        }
+        if (locationState?.applicantName) {
+          setApplicantName(locationState.applicantName);
+        }
+        return;
+      }
+
+      if (locationState?.applicationRef) {
+        setApplicationRef(locationState.applicationRef);
+      }
+      if (locationState?.applicantName) {
+        setApplicantName(locationState.applicantName);
+      }
+
+      if (locationState?.applicationRef && locationState?.applicantName) {
+        return;
+      }
+
+      setLoadingApplication(true);
+      try {
+        const details = await api.getApplicationDetails(existingApplicationId);
+        setApplicationRef(details.reference_number || '');
+        setApplicantName(details.applicant_name || '');
+      } catch (err: any) {
+        console.error('Failed to load application for version upload:', err);
+        setError(err.message || 'Failed to load application details for version upload');
+      } finally {
+        setLoadingApplication(false);
+      }
+    };
+
+    loadExistingApplication();
+  }, [existingApplicationId, locationState?.applicationRef, locationState?.applicantName]);
 
   const validateFiles = (newFiles: File[]): string[] => {
     const errors: string[] = [];
@@ -152,23 +200,20 @@ export default function NewApplication() {
     setFileProgress(progress);
 
     try {
-      const formData = new FormData();
-      formData.append('file', fileToRetry);
+      const uploadHandler = isVersionUpload && existingApplicationId
+        ? api.uploadApplicationRun.bind(null, existingApplicationId)
+        : api.uploadFiles.bind(null, applicationRef.trim());
 
-      await api.uploadFiles(
-        applicationRef,
-        [fileToRetry],
-        (uploadProgress) => {
-          const updated = new Map(fileProgress);
-          updated.set(fileName, {
-            fileName,
-            progress: uploadProgress,
-            status: 'uploading',
-            size: fileToRetry.size,
-          });
-          setFileProgress(updated);
-        }
-      );
+      await uploadHandler([fileToRetry], (uploadProgress: number) => {
+        const updated = new Map(fileProgress);
+        updated.set(fileName, {
+          fileName,
+          progress: uploadProgress,
+          status: 'uploading',
+          size: fileToRetry.size,
+        });
+        setFileProgress(updated);
+      });
 
       const updated = new Map(fileProgress);
       updated.set(fileName, {
@@ -193,9 +238,16 @@ export default function NewApplication() {
 
   const handleSubmit = async () => {
     // Validate application reference
-    const refErrors = validateApplicationRef(applicationRef);
-    if (refErrors.length > 0) {
-      setValidationErrors(refErrors);
+    if (!isVersionUpload) {
+      const refErrors = validateApplicationRef(applicationRef);
+      if (refErrors.length > 0) {
+        setValidationErrors(refErrors);
+        return;
+      }
+    }
+
+    if (isVersionUpload && !existingApplicationId) {
+      setValidationErrors(['Select an existing case before uploading a new version.']);
       return;
     }
 
@@ -222,18 +274,11 @@ export default function NewApplication() {
     setFileProgress(initialProgress);
 
     try {
-      // Try to create application (ignore if already exists)
-      try {
+      if (!isVersionUpload) {
         await api.createApplication({
           application_ref: applicationRef.trim(),
           applicant_name: applicantName.trim() || undefined,
         });
-      } catch (createErr: any) {
-        // Ignore 409 Conflict (application exists) - just continue to upload
-        if (createErr.response?.status !== 409) {
-          throw createErr;
-        }
-        console.log('Application already exists, continuing with upload...');
       }
 
       // Upload files one by one with individual progress tracking
@@ -254,20 +299,20 @@ export default function NewApplication() {
         });
 
         try {
-          const result = await api.uploadFiles(
-            applicationRef.trim(),
-            [file],
-            (progress) => {
-              setFileProgress((prev) => {
-                const updated = new Map(prev);
-                updated.set(file.name, {
-                  ...updated.get(file.name)!,
-                  progress,
-                });
-                return updated;
+          const uploadHandler = isVersionUpload && existingApplicationId
+            ? api.uploadApplicationRun.bind(null, existingApplicationId)
+            : api.uploadFiles.bind(null, applicationRef.trim());
+
+          const result = await uploadHandler([file], (progress: number) => {
+            setFileProgress((prev) => {
+              const updated = new Map(prev);
+              updated.set(file.name, {
+                ...updated.get(file.name)!,
+                progress,
               });
-            }
-          );
+              return updated;
+            });
+          });
 
           // Update to completed
           setFileProgress((prev) => {
@@ -352,11 +397,20 @@ export default function NewApplication() {
   return (
     <Box sx={{ maxWidth: 900, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom fontWeight="bold">
-        New Planning Application
+        {isVersionUpload ? 'Upload New Version' : 'New Planning Application'}
       </Typography>
       <Typography variant="body1" color="text.secondary" mb={3}>
-        Upload planning documents for automated validation
+        {isVersionUpload
+          ? 'Create a new processing run for an existing case.'
+          : 'Upload planning documents for automated validation'}
       </Typography>
+
+      {isVersionUpload && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          You are uploading a new version for case <strong>{applicationRef || 'Loading...'}</strong>.
+          This will create a new run without creating a new application record.
+        </Alert>
+      )}
 
       {/* Backend Status Alert */}
       {backendAvailable === false && (
@@ -390,9 +444,11 @@ export default function NewApplication() {
               placeholder="e.g., APP-2025-001, APP/2025/001"
               required
               fullWidth
-              disabled={uploading}
+              disabled={uploading || isVersionUpload || loadingApplication}
               error={validationErrors.some(e => e.toLowerCase().includes('reference'))}
-              helperText="Required. Alphanumeric, hyphens, and slashes allowed."
+              helperText={isVersionUpload
+                ? 'Locked to the selected case.'
+                : 'Required. Alphanumeric, hyphens, and slashes allowed.'}
             />
 
             {/* Applicant Name */}
@@ -402,7 +458,7 @@ export default function NewApplication() {
               onChange={(e) => setApplicantName(e.target.value)}
               placeholder="Enter applicant name"
               fullWidth
-              disabled={uploading}
+              disabled={uploading || isVersionUpload || loadingApplication}
             />
 
             {/* File Upload */}
@@ -546,7 +602,10 @@ export default function NewApplication() {
             {success && (
               <Alert severity="success">
                 <AlertTitle>Success</AlertTitle>
-                All files uploaded successfully!{lastRunId && ` Run ID: ${lastRunId}.`} Redirecting to results...
+                {isVersionUpload
+                  ? 'New version uploaded successfully!'
+                  : 'All files uploaded successfully!'}
+                {lastRunId && ` Run ID: ${lastRunId}.`} Redirecting to results...
               </Alert>
             )}
 
@@ -556,10 +615,10 @@ export default function NewApplication() {
               size="large"
               startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : <CloudUpload />}
               onClick={handleSubmit}
-              disabled={uploading || files.length === 0 || !applicationRef.trim() || backendAvailable === false}
+              disabled={uploading || loadingApplication || files.length === 0 || !applicationRef.trim() || backendAvailable === false}
               fullWidth
             >
-              {uploading ? 'Uploading...' : 'Start Validation'}
+              {uploading ? 'Uploading...' : isVersionUpload ? 'Upload New Version' : 'Start Validation'}
             </Button>
           </Box>
         </CardContent>

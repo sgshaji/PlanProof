@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 
 from planproof.api.dependencies import get_db, get_current_user
-from planproof.db import Database, Application, Submission, Run
+from planproof.db import Database, Application, Submission, Run, Document, ValidationCheck, ExtractedField
 
 router = APIRouter()
 
@@ -140,6 +140,110 @@ async def get_application(
                 }
                 for sub in submissions
             ]
+        }
+    finally:
+        session.close()
+
+
+@router.get("/applications/id/{application_id}")
+async def get_application_details(
+    application_id: int,
+    db: Database = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get full application details with run history by ID.
+    
+    **Path Parameters:**
+    - application_id: Application database ID
+    
+    **Returns:**
+    - Application metadata
+    - List of all runs with documents and validation summary
+    """
+    session = db.get_session()
+    try:
+        app = session.query(Application).filter(Application.id == application_id).first()
+        
+        if not app:
+            raise HTTPException(status_code=404, detail="Application not found")
+        
+        # Get all runs for this application (most recent first)
+        runs = session.query(Run).filter(
+            Run.application_id == application_id
+        ).order_by(Run.started_at.desc()).all()
+        
+        run_history = []
+        for run in runs:
+            document_ids = [doc.id for doc in run.documents] if run.documents else []
+            if not document_ids and run.document_id:
+                document_ids = [run.document_id]
+
+            # Count validation checks by status
+            checks_pass = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id.in_(document_ids),
+                ValidationCheck.status == 'pass'
+            ).scalar() if document_ids else 0
+            
+            checks_fail = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id.in_(document_ids),
+                ValidationCheck.status == 'fail'
+            ).scalar() if document_ids else 0
+            
+            checks_warning = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id.in_(document_ids),
+                ValidationCheck.status == 'warning'
+            ).scalar() if document_ids else 0
+            
+            checks_needs_review = session.query(func.count(ValidationCheck.id)).filter(
+                ValidationCheck.document_id.in_(document_ids),
+                ValidationCheck.status == 'needs_review'
+            ).scalar() if document_ids else 0
+            
+            run_history.append({
+                "id": run.id,
+                "created_at": run.started_at.isoformat() if run.started_at else None,
+                "status": run.status,
+                "validation_summary": {
+                    "pass": checks_pass,
+                    "fail": checks_fail,
+                    "warning": checks_warning,
+                    "needs_review": checks_needs_review
+                }
+            })
+        
+        latest_submission = session.query(Submission).filter(
+            Submission.planning_case_id == application_id
+        ).order_by(Submission.created_at.desc()).first()
+
+        def _get_latest_field_value(field_names: List[str]) -> Optional[str]:
+            if not latest_submission:
+                return None
+            field = session.query(ExtractedField).filter(
+                ExtractedField.submission_id == latest_submission.id,
+                ExtractedField.field_name.in_(field_names)
+            ).order_by(
+                ExtractedField.confidence.desc().nullslast(),
+                ExtractedField.created_at.desc()
+            ).first()
+            return field.field_value if field else None
+
+        extracted_address = _get_latest_field_value(["site_address", "address"])
+        extracted_proposal = _get_latest_field_value(["proposal_description", "proposed_use"])
+        extracted_applicant = _get_latest_field_value(["applicant_name"])
+
+        # Determine overall status from latest run
+        latest_status = runs[0].status if runs else "unknown"
+        
+        return {
+            "id": app.id,
+            "reference_number": app.application_ref,
+            "address": extracted_address or "Not available",
+            "proposal": extracted_proposal or "Not available",
+            "applicant_name": app.applicant_name or extracted_applicant or "Unknown",
+            "created_at": app.created_at.isoformat() if app.created_at else None,
+            "status": latest_status,
+            "run_history": run_history
         }
     finally:
         session.close()

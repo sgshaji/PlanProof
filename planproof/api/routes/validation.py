@@ -19,6 +19,7 @@ class RunStatus(BaseModel):
     started_at: str
     completed_at: Optional[str]
     document_id: Optional[int]
+    document_ids: Optional[List[int]] = None
     error_message: Optional[str]
 
 
@@ -36,7 +37,8 @@ class ValidationResults(BaseModel):
     """Complete validation results."""
     run_id: int
     application_ref: str
-    document_id: int
+    document_id: Optional[int]
+    document_ids: Optional[List[int]] = None
     status: str
     summary: Dict[str, int]
     findings: List[ValidationFinding]
@@ -79,6 +81,7 @@ async def get_validation_status(
                 started_at=run.started_at.isoformat() if run.started_at else None,
                 completed_at=run.completed_at.isoformat() if run.completed_at else None,
                 document_id=run.document_id,
+                document_ids=[doc.id for doc in run.documents] if run.documents else None,
                 error_message=run.error_message
             )
             for run in runs
@@ -112,6 +115,7 @@ async def get_run_status(
             started_at=run.started_at.isoformat() if run.started_at else None,
             completed_at=run.completed_at.isoformat() if run.completed_at else None,
             document_id=run.document_id,
+            document_ids=[doc.id for doc in run.documents] if run.documents else None,
             error_message=run.error_message
         )
     finally:
@@ -168,15 +172,22 @@ async def get_validation_results(
                 detail=f"Run {run.id} is not completed yet. Status: {run.status}"
             )
         
-        # Get validation checks
-        checks = session.query(ValidationCheck).filter(
-            ValidationCheck.run_id == run.id
-        ).all()
-        
-        # Get artifacts
-        artifacts = session.query(Artefact).filter(
-            Artefact.document_id == run.document_id
-        ).all()
+        document_ids = [doc.id for doc in run.documents] if run.documents else []
+        if not document_ids and run.document_id:
+            document_ids = [run.document_id]
+
+        checks = []
+        artifacts = []
+        if document_ids:
+            # Get validation checks
+            checks = session.query(ValidationCheck).filter(
+                ValidationCheck.document_id.in_(document_ids)
+            ).all()
+
+            # Get artifacts
+            artifacts = session.query(Artefact).filter(
+                Artefact.document_id.in_(document_ids)
+            ).all()
         
         # Build findings
         findings = []
@@ -206,6 +217,7 @@ async def get_validation_results(
             run_id=run.id,
             application_ref=application_ref,
             document_id=run.document_id,
+            document_ids=document_ids,
             status=run.status,
             summary=summary,
             findings=findings,
@@ -240,15 +252,33 @@ async def get_run_results(
                 detail=f"Run is not completed yet. Status: {run.status}"
             )
         
-        # Get validation checks for the document associated with this run
-        if not run.document_id:
+        documents = list(run.documents) if run.documents else []
+        if not documents and run.document_id:
+            document = session.query(Document).filter(Document.id == run.document_id).first()
+            if document:
+                documents = [document]
+
+        if not documents:
             raise HTTPException(
                 status_code=404,
-                detail="No document associated with this run"
+                detail="No documents associated with this run"
             )
-        
+
+        document_ids = [doc.id for doc in documents]
+        document_lookup = {doc.id: doc for doc in documents}
+
+        document_entries = [
+            {
+                "document_id": doc.id,
+                "document_name": doc.filename,
+                "document_type": doc.document_type or "Unknown",
+                "status": "processed" if run.status == "completed" else "pending"
+            }
+            for doc in documents
+        ]
+
         checks = session.query(ValidationCheck).filter(
-            ValidationCheck.document_id == run.document_id
+            ValidationCheck.document_id.in_(document_ids)
         ).all()
         
         summary = {"pass": 0, "fail": 0, "warning": 0, "needs_review": 0}
@@ -258,13 +288,20 @@ async def get_run_results(
             # Map ValidationCheck status enum to string
             status_str = check.status.value if hasattr(check.status, 'value') else str(check.status)
             
+            severity = None
+            if check.rule and check.rule.severity:
+                severity = check.rule.severity
+            
             findings.append({
+                "id": check.id,
                 "rule_id": check.rule_id_string or str(check.rule_id),
-                "title": check.rule_id_string or str(check.rule_id),  # Use rule_id as title
+                "title": check.rule_id_string or str(check.rule_id),
                 "status": status_str,
-                "severity": "info",  # Default severity
+                "severity": severity or "info",
                 "message": check.explanation or "",
-                "evidence": check.evidence_ids or []
+                "evidence": check.evidence_ids or [],
+                "details": check.rule.rule_config if check.rule and check.rule.rule_config else None,
+                "document_name": document_lookup.get(check.document_id).filename if check.document_id in document_lookup else None
             })
             
             # Count by status
@@ -278,34 +315,28 @@ async def get_run_results(
                 summary["needs_review"] += 1
         
         # Get document details to show extracted fields
-        document = None
         extracted_fields = {}
-        if run.document_id:
-            document = session.query(Document).filter(Document.id == run.document_id).first()
-            if document:
-                # Get extraction artefact to show extracted fields
-                extraction_artefact = session.query(Artefact).filter(
-                    Artefact.document_id == document.id,
-                    Artefact.artefact_type == "extraction"
-                ).first()
-                
-                if extraction_artefact and extraction_artefact.blob_uri:
-                    # Note: In production, would fetch from blob storage
-                    # For now, just indicate it exists
-                    extracted_fields = {"note": "Extraction data available at blob storage"}
+        for doc in documents:
+            extraction_artefact = session.query(Artefact).filter(
+                Artefact.document_id == doc.id,
+                Artefact.artefact_type == "extraction"
+            ).first()
+
+            if extraction_artefact and extraction_artefact.blob_uri:
+                extracted_fields[doc.id] = {"note": "Extraction data available at blob storage"}
         
         # Count LLM calls from artefacts
         llm_count = 0
-        if run.document_id:
+        if document_ids:
             llm_count = session.query(Artefact).filter(
-                Artefact.document_id == run.document_id,
+                Artefact.document_id.in_(document_ids),
                 Artefact.artefact_type == "llm_notes"
             ).count()
         
         # Build response with correct structure
         response_summary = {
-            "total_documents": 1 if run.document_id else 0,
-            "processed": 1 if run.status == "completed" and run.document_id else 0,
+            "total_documents": len(document_ids),
+            "processed": len(document_ids) if run.status == "completed" else 0,
             "errors": 1 if run.status == "failed" else 0,
             "pass": summary["pass"],
             "fail": summary["fail"],
@@ -317,10 +348,11 @@ async def get_run_results(
             "run_id": run.id,
             "status": run.status,
             "summary": response_summary,
+            "documents": document_entries,
             "findings": findings,
             "llm_calls_per_run": llm_count,
             "extracted_fields": extracted_fields,
-            "document_name": document.filename if document else None,
+            "document_names": [doc.filename for doc in documents],
             "completed_at": run.completed_at.isoformat() if run.completed_at else None
         }
     finally:
