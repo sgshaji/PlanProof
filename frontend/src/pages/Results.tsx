@@ -45,6 +45,8 @@ export default function Results() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [downloadingReport, setDownloadingReport] = useState(false);
+  const [reclassifying, setReclassifying] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const loadResults = async (isBackground = false) => {
     if (!runId) return;
@@ -170,12 +172,40 @@ export default function Results() {
       const link = document.createElement('a');
       link.href = url;
       link.download = `run-${runId}-hil-review-report.pdf`;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
       setError(getApiErrorMessage(err, 'Failed to download report'));
     } finally {
       setDownloadingReport(false);
+    }
+  };
+
+  const handleReclassifyDocument = async (documentId: number, documentName: string, isCorrect: boolean) => {
+    if (!runId) return;
+    
+    const reclassifyKey = `${documentId}-${isCorrect}`;
+    setReclassifying(reclassifyKey);
+    setError('');
+    
+    try {
+      // For thumbs up: keep the current document type (confirm correct)
+      // For thumbs down: reclassify as 'incorrect' or 'other'
+      const newType = isCorrect ? documentName : 'incorrect';
+      
+      await api.reclassifyDocument(parseInt(runId), documentId, newType);
+      
+      setSuccessMessage(`Document ${isCorrect ? 'confirmed' : 'marked as incorrect'}`);
+      setTimeout(() => setSuccessMessage(''), 3000);
+      
+      // Refresh results to show updated candidate documents
+      await loadResults(true);
+    } catch (err: any) {
+      setError(getApiErrorMessage(err, 'Failed to reclassify document'));
+    } finally {
+      setReclassifying(null);
     }
   };
 
@@ -185,6 +215,11 @@ export default function Results() {
       {error && results && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+          {successMessage}
         </Alert>
       )}
       {/* Header */}
@@ -446,12 +481,30 @@ export default function Results() {
                             </Box>
                             <Box>
                               <Tooltip title="Confirm correct document">
-                                <IconButton size="small" color="success">
+                                <IconButton
+                                  size="small"
+                                  color="success"
+                                  onClick={() => handleReclassifyDocument(
+                                    doc.document_id,
+                                    doc.document_name,
+                                    true
+                                  )}
+                                  disabled={reclassifying === `${doc.document_id}-true`}
+                                >
                                   <ThumbUp fontSize="small" />
                                 </IconButton>
                               </Tooltip>
                               <Tooltip title="Mark as incorrect">
-                                <IconButton size="small" color="error">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleReclassifyDocument(
+                                    doc.document_id,
+                                    doc.document_name,
+                                    false
+                                  )}
+                                  disabled={reclassifying === `${doc.document_id}-false`}
+                                >
                                   <ThumbDown fontSize="small" />
                                 </IconButton>
                               </Tooltip>
@@ -544,9 +597,64 @@ export default function Results() {
                     <AccordionDetails>
                       <Stack spacing={1}>
                         {finding.candidate_documents.map((doc: any, docIndex: number) => (
-                          <Box key={docIndex} sx={{ p: 1.5, backgroundColor: 'grey.100', borderRadius: 1 }}>
-                            <Typography variant="body2">{doc.document_name}</Typography>
-                            <Typography variant="caption" color="text.secondary">{doc.reason}</Typography>
+                          <Box
+                            key={docIndex}
+                            sx={{
+                              p: 1.5,
+                              backgroundColor: doc.scanned ? 'success.lighter' : 'grey.100',
+                              borderRadius: 1,
+                              border: '1px solid',
+                              borderColor: doc.scanned ? 'success.main' : 'grey.300',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Box>
+                              <Typography variant="body2" fontWeight="medium">
+                                {doc.document_name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {doc.reason}
+                              </Typography>
+                              {doc.confidence && (
+                                <Chip
+                                  label={`${(doc.confidence * 100).toFixed(0)}%`}
+                                  size="small"
+                                  sx={{ ml: 1 }}
+                                />
+                              )}
+                            </Box>
+                            <Box>
+                              <Tooltip title="Confirm correct document">
+                                <IconButton
+                                  size="small"
+                                  color="success"
+                                  onClick={() => handleReclassifyDocument(
+                                    doc.document_id,
+                                    doc.document_name,
+                                    true
+                                  )}
+                                  disabled={reclassifying === `${doc.document_id}-true`}
+                                >
+                                  <ThumbUp fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              <Tooltip title="Mark as incorrect">
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleReclassifyDocument(
+                                    doc.document_id,
+                                    doc.document_name,
+                                    false
+                                  )}
+                                  disabled={reclassifying === `${doc.document_id}-false`}
+                                >
+                                  <ThumbDown fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
                           </Box>
                         ))}
                       </Stack>
