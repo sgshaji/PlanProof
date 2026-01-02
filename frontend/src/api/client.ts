@@ -227,7 +227,7 @@ export const api = {
   reclassifyDocument: async (runId: number, documentId: number, newType: string) => {
     const response = await apiClient.post(`/api/v1/runs/${runId}/reclassify_document`, {
       document_id: documentId,
-      new_document_type: newType,
+      document_type: newType,
     });
     return response.data;
   },
