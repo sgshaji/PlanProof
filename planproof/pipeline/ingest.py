@@ -104,16 +104,38 @@ def ingest_pdf(
 
     # Get or create submission (V0 or V1+ based on parent_submission_id)
     if parent_submission_id is not None:
-        # This is a modification submission - determine next version
+        # This is a modification submission - validate parent exists
         parent_submission = db.get_submission_by_id(parent_submission_id)
-        if parent_submission:
-            # Parse parent version (e.g., "V0" -> 0, "V1" -> 1)
-            parent_version_num = int(parent_submission.submission_version[1:])
-            next_version = f"V{parent_version_num + 1}"
-        else:
-            # Parent not found, default to V1
-            next_version = "V1"
-        
+
+        if not parent_submission:
+            # 🛑 FAIL FAST: Invalid parent_submission_id provided
+            error_msg = (
+                f"Invalid parent_submission_id={parent_submission_id}. "
+                f"Parent submission not found in database. "
+                f"Cannot create modification submission without valid parent."
+            )
+            LOGGER.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Validate parent belongs to same application
+        if parent_submission.planning_case_id != application.id:
+            error_msg = (
+                f"Parent submission {parent_submission_id} belongs to application "
+                f"{parent_submission.planning_case_id}, but uploading to {application.id}. "
+                f"Cross-application modifications not allowed."
+            )
+            LOGGER.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Parse parent version and increment
+        parent_version_num = int(parent_submission.submission_version[1:])
+        next_version = f"V{parent_version_num + 1}"
+
+        LOGGER.info(
+            f"Creating modification submission {next_version} "
+            f"(parent: {parent_submission.submission_version}, ID: {parent_submission_id})"
+        )
+
         # Create new version submission
         submission = db.create_submission(
             planning_case_id=application.id,

@@ -60,6 +60,16 @@ class Submission(Base):
     parent_submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True, index=True)  # For modifications
     status = Column(String(20), nullable=False, default="pending")  # pending, processing, completed, failed
     submission_metadata = Column(JSON, nullable=True)  # resolved_fields, llm_calls_per_submission, etc.
+
+    # Submission type classification (modification vs new construction)
+    submission_type = Column(
+        String(50),
+        nullable=True,  # Nullable for backward compatibility with existing data
+        default="new_construction"
+    )  # Values: "modification", "new_construction", "resubmission"
+    submission_type_confidence = Column(Float, nullable=True)  # 0.0-1.0 from LLM classification
+    submission_type_source = Column(String(20), nullable=True)  # "llm", "user", "heuristic"
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

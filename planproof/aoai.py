@@ -52,6 +52,13 @@ class AzureOpenAIClient:
         self.timeout = timeout or 60.0
         self._call_count = 0  # Track LLM calls for metrics
 
+        # Cost tracking
+        self.total_tokens = 0
+        self.total_cost = 0.0
+        # GPT-4 pricing (adjust based on actual model)
+        # https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/
+        self.cost_per_1k_tokens = 0.03  # $0.03 per 1K tokens (GPT-4 average)
+
     def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -60,7 +67,7 @@ class AzureOpenAIClient:
         **kwargs
     ) -> ChatCompletion:
         """
-        Create a chat completion with proper error handling.
+        Create a chat completion with proper error handling and cost tracking.
 
         Args:
             messages: List of message dictionaries with "role" and "content"
@@ -77,13 +84,36 @@ class AzureOpenAIClient:
         self._call_count += 1
 
         try:
-            return self.client.chat.completions.create(
+            response = self.client.chat.completions.create(
                 model=self.deployment,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs
             )
+
+            # Track tokens and cost
+            if hasattr(response, 'usage') and response.usage:
+                tokens_used = response.usage.total_tokens
+                cost = (tokens_used / 1000) * self.cost_per_1k_tokens
+
+                self.total_tokens += tokens_used
+                self.total_cost += cost
+
+                LOGGER.info(
+                    f"LLM call #{self._call_count}: {tokens_used} tokens, "
+                    f"${cost:.4f} (total: ${self.total_cost:.4f})"
+                )
+
+                # Budget alert threshold: $5.00
+                if self.total_cost > 5.0:
+                    LOGGER.warning(
+                        f"⚠️  LLM cost exceeded ${self.total_cost:.2f}! "
+                        f"Consider reducing calls or checking for runaway usage."
+                    )
+
+            return response
+
         except APITimeoutError as e:
             error_msg = f"Azure OpenAI API timeout after {self.timeout}s: {str(e)}"
             LOGGER.error(error_msg)
@@ -110,8 +140,36 @@ class AzureOpenAIClient:
         return self._call_count
     
     def reset_call_count(self):
-        """Reset the LLM call counter (useful for per-run tracking)."""
+        """Reset the LLM call counter and cost tracking (useful for per-run tracking)."""
         self._call_count = 0
+        self.total_tokens = 0
+        self.total_cost = 0.0
+
+    def get_cost_summary(self) -> Dict[str, Any]:
+        """
+        Get comprehensive cost and usage summary.
+
+        Returns:
+            Dictionary with cost metrics including:
+            - total_calls: Number of LLM calls made
+            - total_tokens: Total tokens used
+            - total_cost_usd: Total cost in USD
+            - avg_tokens_per_call: Average tokens per call
+            - cost_per_call: Average cost per call
+        """
+        avg_tokens = self.total_tokens / max(self._call_count, 1)
+        avg_cost = self.total_cost / max(self._call_count, 1)
+
+        return {
+            "total_calls": self._call_count,
+            "total_tokens": self.total_tokens,
+            "total_cost_usd": round(self.total_cost, 4),
+            "avg_tokens_per_call": round(avg_tokens, 2),
+            "cost_per_call_usd": round(avg_cost, 4),
+            "budget_threshold_usd": 5.00,
+            "budget_remaining_usd": round(5.00 - self.total_cost, 2),
+            "over_budget": self.total_cost > 5.00
+        }
 
     def resolve_field_conflict(
         self,

@@ -384,27 +384,34 @@ def build_llm_prompt(extraction: Dict[str, Any], validation: Dict[str, Any]) -> 
 def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any], aoai_client: Optional[AzureOpenAIClient] = None) -> Dict[str, Any]:
     """
     Use LLM to resolve missing fields from extraction and validation results.
-    
+
+    Now with graceful degradation: if LLM fails, marks fields as needs_review
+    instead of silently continuing.
+
     Args:
         extraction: Extraction result dictionary
         validation: Validation result dictionary
         aoai_client: Optional AzureOpenAIClient instance
-        
+
     Returns:
-        Dictionary with triggered flag, request, response, gate logging info, and llm_call_count
+        Dictionary with triggered flag, request, response, gate logging info, llm_call_count, and status
     """
+    import logging
+    from datetime import datetime, timezone
+
+    LOGGER = logging.getLogger(__name__)
+
     if aoai_client is None:
         from planproof.aoai import AzureOpenAIClient
-
         aoai_client = AzureOpenAIClient()
-    
+
     # Get call count before the LLM call
     call_count_before = aoai_client.get_call_count()
-    
+
     # Collect missing fields and affected rule IDs for logging
     missing_fields: List[str] = []
     affected_rule_ids: List[str] = []
-    
+
     for finding in validation.get("findings", []):
         if finding.get("status") in ["needs_review", "fail"]:
             missing = finding.get("missing_fields", [])
@@ -412,28 +419,59 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
             rule_id = finding.get("rule_id")
             if rule_id:
                 affected_rule_ids.append(rule_id)
-    
+
     missing_fields = sorted(set(missing_fields))
     affected_rule_ids = sorted(set(affected_rule_ids))
-    
-    prompt_obj = build_llm_prompt(extraction, validation)
-    resp = aoai_client.chat_json(prompt_obj)  # returns parsed JSON dict
-    
-    # Get call count after the LLM call
-    call_count_after = aoai_client.get_call_count()
-    llm_calls_made = call_count_after - call_count_before
-    
-    return {
-        "triggered": True,
-        "gate_reason": {
-            "missing_fields": missing_fields,
-            "affected_rule_ids": affected_rule_ids,
-            "validation_summary": validation.get("summary", {})
-        },
-        "request": prompt_obj,
-        "response": resp,
-        "llm_call_count": llm_calls_made,
-    }
+
+    try:
+        prompt_obj = build_llm_prompt(extraction, validation)
+        resp = aoai_client.chat_json(prompt_obj)  # returns parsed JSON dict
+
+        # Get call count after the LLM call
+        call_count_after = aoai_client.get_call_count()
+        llm_calls_made = call_count_after - call_count_before
+
+        return {
+            "triggered": True,
+            "gate_reason": {
+                "missing_fields": missing_fields,
+                "affected_rule_ids": affected_rule_ids,
+                "validation_summary": validation.get("summary", {})
+            },
+            "request": prompt_obj,
+            "response": resp,
+            "llm_call_count": llm_calls_made,
+            "status": "success"
+        }
+
+    except Exception as e:
+        # 🛑 GRACEFUL DEGRADATION: Don't silently continue!
+        LOGGER.error(f"LLM resolution failed: {e}", exc_info=True)
+
+        # Mark fields as needs_review instead of losing data
+        return {
+            "triggered": True,
+            "gate_reason": {
+                "missing_fields": missing_fields,
+                "affected_rule_ids": affected_rule_ids,
+                "validation_summary": validation.get("summary", {})
+            },
+            "request": None,
+            "response": {
+                "filled_fields": {},  # Empty - LLM failed
+                "citations": [],
+                "needs_review": missing_fields,  # ← Flag all fields for officer review
+                "error": str(e)
+            },
+            "llm_call_count": 0,
+            "status": "failed",
+            "error_details": {
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "affected_fields": missing_fields
+            }
+        }
 
 
 def resolve_low_confidence_extractions(
