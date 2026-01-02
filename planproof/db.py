@@ -405,7 +405,6 @@ class ReviewDecision(Base):
     # Relationships
     validation_check = relationship("ValidationCheck")
     run = relationship("Run")
-    recheck_history = relationship("RecheckHistory", back_populates="issue_resolution", cascade="all, delete-orphan")
 
 
 class ResolutionAction(Base):

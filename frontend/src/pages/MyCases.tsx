@@ -140,12 +140,12 @@ export default function MyCases() {
                       <Typography variant="h6" gutterBottom>
                         {caseItem.application_ref}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary" gutterBottom">
-                        👤 {caseItem.applicant_name || 'Unknown'}
+                      <Typography variant="body2" color="text.secondary">
+                        {caseItem.applicant_name || 'Unknown'}
                       </Typography>
                       {caseItem.run_count > 0 && (
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          📊 {caseItem.run_count} run{caseItem.run_count !== 1 ? 's' : ''} processed
+                        <Typography variant="body2" color="text.secondary">
+                          {caseItem.run_count} run{caseItem.run_count !== 1 ? 's' : ''} processed
                         </Typography>
                       )}
                       <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
