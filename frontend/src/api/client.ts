@@ -102,6 +102,33 @@ export const api = {
     return results[results.length - 1] || { run_id: null };
   },
 
+  uploadApplicationRun: async (
+    applicationId: number,
+    files: File[],
+    onProgress?: (progress: number) => void
+  ) => {
+    const results = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await apiClient.post(`/api/v1/applications/${applicationId}/runs`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total && onProgress) {
+            const fileProgress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            const totalProgress = Math.round(((i + (fileProgress / 100)) / files.length) * 100);
+            onProgress(totalProgress);
+          }
+        },
+      });
+      results.push(response.data);
+    }
+
+    return results[results.length - 1] || { run_id: null };
+  },
+
   // Runs
   getRuns: async (page = 1, pageSize = 20, status?: string) => {
     const response = await apiClient.get('/api/v1/runs', {

@@ -114,7 +114,13 @@ const ApplicationDetails: React.FC = () => {
 
   const handleUploadNewVersion = () => {
     // Navigate to upload page with pre-filled application data
-    navigate('/new-application', { state: { applicationId: appData?.id } });
+    navigate('/new-application', {
+      state: {
+        applicationId: appData?.id,
+        applicationRef: appData?.reference_number,
+        applicantName: appData?.applicant_name,
+      },
+    });
   };
 
   const handleViewResults = (runId: number) => {
