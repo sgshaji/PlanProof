@@ -13,10 +13,11 @@ import {
   Paper,
 } from '@mui/material';
 import { Login as LoginIcon } from '@mui/icons-material';
-import { api } from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,12 +35,8 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await api.login(username, password);
-      
-      // Store token and user info
-      localStorage.setItem('token', response.access_token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      
+      await login(username, password);
+
       // Redirect to dashboard or previous page
       const redirectTo = new URLSearchParams(window.location.search).get('redirect') || '/new-application';
       navigate(redirectTo);

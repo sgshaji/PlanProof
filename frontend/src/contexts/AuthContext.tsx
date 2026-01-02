@@ -40,13 +40,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const loadUser = async () => {
       const token = localStorage.getItem('token');
-      const savedUser = localStorage.getItem('user');
-
-      if (token && savedUser) {
+      if (token) {
         try {
           // Validate token is still valid by fetching fresh user info
           const userInfo = await api.getCurrentUser();
           setUser(userInfo);
+          localStorage.setItem('user', JSON.stringify(userInfo));
         } catch (err) {
           console.error('Failed to validate token:', err);
           // Token is invalid, clear it
@@ -54,6 +53,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           localStorage.removeItem('user');
           setUser(null);
         }
+      } else {
+        setUser(null);
       }
 
       setLoading(false);
