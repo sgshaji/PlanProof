@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Card, CardContent, Grid, Typography, CircularProgress } from '@mui/material';
+import { Box, Card, CardContent, Grid, Typography, Skeleton } from '@mui/material';
 import { api } from '../api/client';
 
 export default function Dashboard() {
@@ -39,8 +39,31 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-        <CircularProgress />
+      <Box>
+        <Typography variant="h4" gutterBottom fontWeight="bold">
+          📊 Dashboard
+        </Typography>
+        <Typography variant="body1" color="text.secondary" mb={3}>
+          Analytics and insights
+        </Typography>
+        <Grid container spacing={3}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Grid item xs={12} md={3} key={index}>
+              <Card>
+                <CardContent>
+                  <Skeleton variant="text" width="40%" height={40} />
+                  <Skeleton variant="text" width="60%" />
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="60%" />
+          </CardContent>
+        </Card>
       </Box>
     );
   }

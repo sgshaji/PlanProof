@@ -15,37 +15,61 @@ import {
   Grid,
   CircularProgress,
   Alert,
+  Skeleton,
+  Stack,
 } from '@mui/material';
 import { Visibility, Refresh } from '@mui/icons-material';
 import { api } from '../api/client';
-import type { Application } from '../types';
 
 export default function MyCases() {
   const navigate = useNavigate();
   const [cases, setCases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const pageSize = 20;
 
-  const loadCases = async () => {
-    setLoading(true);
+  const loadCases = async (pageToLoad = 1, replace = false) => {
+    if (replace) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
     setError('');
     try {
-      const data = await api.getApplications(page, 20);
+      const data = await api.getApplications(pageToLoad, pageSize);
       // API returns direct array, not wrapped object
-      setCases(Array.isArray(data) ? data : (data.applications || []));
+      const incomingCases = Array.isArray(data) ? data : (data.applications || []);
+      setCases((prev) => (replace ? incomingCases : [...prev, ...incomingCases]));
+      setHasMore(incomingCases.length === pageSize);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to load cases');
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
   useEffect(() => {
-    loadCases();
+    loadCases(page, page === 1);
   }, [page]);
+
+  const handleRefresh = () => {
+    setPage(1);
+    if (page === 1) {
+      loadCases(1, true);
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (!loadingMore && hasMore) {
+      setPage((prev) => prev + 1);
+    }
+  };
 
   const filteredCases = cases.filter((c) => {
     const matchesSearch =
@@ -56,21 +80,13 @@ export default function MyCases() {
     return matchesSearch && matchesStatus;
   });
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4" fontWeight="bold">
           📋 My Cases
         </Typography>
-        <Button startIcon={<Refresh />} onClick={loadCases}>
+        <Button startIcon={<Refresh />} onClick={handleRefresh}>
           Refresh
         </Button>
       </Box>
@@ -110,7 +126,28 @@ export default function MyCases() {
       </Grid>
 
       {/* Cases List */}
-      {filteredCases.length === 0 ? (
+      {loading && cases.length === 0 ? (
+        <Stack spacing={2}>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Skeleton variant="text" width="40%" height={28} />
+                    <Skeleton variant="text" width="30%" />
+                    <Skeleton variant="text" width="25%" />
+                    <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                      <Skeleton variant="rounded" width={90} height={24} />
+                      <Skeleton variant="rounded" width={120} height={24} />
+                    </Box>
+                  </Box>
+                  <Skeleton variant="rounded" width={120} height={36} />
+                </Box>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
+      ) : filteredCases.length === 0 ? (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 8 }}>
             <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -130,56 +167,70 @@ export default function MyCases() {
           </CardContent>
         </Card>
       ) : (
-        <Grid container spacing={2}>
-          {filteredCases.map((caseItem) => (
-            <Grid item xs={12} key={caseItem.id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography variant="h6" gutterBottom>
-                        {caseItem.application_ref}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {caseItem.applicant_name || 'Unknown'}
-                      </Typography>
-                      {caseItem.run_count > 0 && (
-                        <Typography variant="body2" color="text.secondary">
-                          {caseItem.run_count} run{caseItem.run_count !== 1 ? 's' : ''} processed
+        <>
+          <Grid container spacing={2}>
+            {filteredCases.map((caseItem) => (
+              <Grid item xs={12} key={caseItem.id}>
+                <Card>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="h6" gutterBottom>
+                          {caseItem.application_ref}
                         </Typography>
-                      )}
-                      <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                        <Chip
-                          label={caseItem.status || 'Unknown'}
-                          color={
-                            caseItem.status === 'completed'
-                              ? 'success'
-                              : caseItem.status === 'processing'
-                              ? 'info'
-                              : 'error'
-                          }
-                          size="small"
-                        />
-                        <Chip
-                          label={`📅 ${new Date(caseItem.created_at).toLocaleDateString()}`}
-                          size="small"
-                          variant="outlined"
-                        />
+                        <Typography variant="body2" color="text.secondary">
+                          {caseItem.applicant_name || 'Unknown'}
+                        </Typography>
+                        {caseItem.run_count > 0 && (
+                          <Typography variant="body2" color="text.secondary">
+                            {caseItem.run_count} run{caseItem.run_count !== 1 ? 's' : ''} processed
+                          </Typography>
+                        )}
+                        <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                          <Chip
+                            label={caseItem.status || 'Unknown'}
+                            color={
+                              caseItem.status === 'completed'
+                                ? 'success'
+                                : caseItem.status === 'processing'
+                                ? 'info'
+                                : 'error'
+                            }
+                            size="small"
+                          />
+                          <Chip
+                            label={`📅 ${new Date(caseItem.created_at).toLocaleDateString()}`}
+                            size="small"
+                            variant="outlined"
+                          />
+                        </Box>
                       </Box>
+                      <Button
+                        variant="outlined"
+                        startIcon={<Visibility />}
+                        onClick={() => navigate(`/applications/${caseItem.id}`)}
+                      >
+                        Open Case
+                      </Button>
                     </Box>
-                    <Button
-                      variant="outlined"
-                      startIcon={<Visibility />}
-                      onClick={() => navigate(`/applications/${caseItem.id}`)}
-                    >
-                      Open Case
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+          {hasMore && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+              <Button
+                variant="outlined"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                startIcon={loadingMore ? <CircularProgress size={16} /> : undefined}
+              >
+                {loadingMore ? 'Loading more cases...' : 'Load more cases'}
+              </Button>
+            </Box>
+          )}
+        </>
       )}
     </Box>
   );

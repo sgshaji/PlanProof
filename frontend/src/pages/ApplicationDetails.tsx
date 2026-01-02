@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -29,6 +29,8 @@ import {
   List,
   ListItem,
   ListItemText,
+  Skeleton,
+  TablePagination,
 } from '@mui/material';
 import {
   CloudUpload,
@@ -116,6 +118,9 @@ const ApplicationDetails: React.FC = () => {
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState('');
   const [comparison, setComparison] = useState<RunComparison | null>(null);
+  const [runPage, setRunPage] = useState(0);
+  const [runsPerPage, setRunsPerPage] = useState(5);
+  const prefetchedRunsRef = useRef(new Set<number>());
 
   useEffect(() => {
     loadApplicationDetails();
@@ -127,6 +132,10 @@ const ApplicationDetails: React.FC = () => {
       setCompareRunIdA(appData.run_history[1].id);
     }
   }, [appData]);
+
+  useEffect(() => {
+    setRunPage(0);
+  }, [appData?.run_history.length]);
 
   const loadApplicationDetails = async () => {
     if (!applicationId) {
@@ -188,6 +197,20 @@ const ApplicationDetails: React.FC = () => {
     navigate(`/applications/${applicationId}/runs/${runId}`);
   };
 
+  const prefetchRunResults = async (runId: number) => {
+    if (prefetchedRunsRef.current.has(runId)) {
+      return;
+    }
+    prefetchedRunsRef.current.add(runId);
+    try {
+      const results = await api.getRunResults(runId);
+      sessionStorage.setItem(`run-results-${runId}`, JSON.stringify(results));
+    } catch (err) {
+      prefetchedRunsRef.current.delete(runId);
+      console.warn('Failed to prefetch run results:', err);
+    }
+  };
+
   const handleOpenCompare = () => {
     setCompareError('');
     setComparison(null);
@@ -219,8 +242,42 @@ const ApplicationDetails: React.FC = () => {
 
   if (loading) {
     return (
-      <Container maxWidth="lg" sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress />
+      <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+        <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+            <Box sx={{ flex: 1 }}>
+              <Skeleton variant="text" width="40%" height={40} />
+              <Skeleton variant="rounded" width={120} height={32} />
+            </Box>
+            <Stack direction="row" spacing={2}>
+              <Skeleton variant="rounded" width={120} height={36} />
+              <Skeleton variant="rounded" width={180} height={36} />
+            </Stack>
+          </Box>
+          <Divider sx={{ my: 2 }} />
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <Skeleton variant="text" width="30%" />
+              <Skeleton variant="text" width="80%" />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Skeleton variant="text" width="30%" />
+              <Skeleton variant="text" width="80%" />
+            </Grid>
+            <Grid item xs={12}>
+              <Skeleton variant="text" width="20%" />
+              <Skeleton variant="text" width="90%" />
+            </Grid>
+          </Grid>
+        </Paper>
+        <Paper elevation={2} sx={{ p: 3 }}>
+          <Skeleton variant="text" width="30%" height={32} sx={{ mb: 2 }} />
+          <Stack spacing={2}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <Skeleton key={index} variant="rounded" height={56} />
+            ))}
+          </Stack>
+        </Paper>
       </Container>
     );
   }
@@ -252,6 +309,11 @@ const ApplicationDetails: React.FC = () => {
       </Container>
     );
   }
+
+  const pagedRuns = appData.run_history.slice(
+    runPage * runsPerPage,
+    runPage * runsPerPage + runsPerPage
+  );
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -558,7 +620,7 @@ const ApplicationDetails: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {appData.run_history.map((run) => (
+                {pagedRuns.map((run) => (
                   <TableRow key={run.id} hover>
                     <TableCell>
                       <Typography variant="body2" fontFamily="monospace">
@@ -621,6 +683,16 @@ const ApplicationDetails: React.FC = () => {
                           variant="outlined"
                           startIcon={<Visibility />}
                           onClick={() => handleViewResults(run.id)}
+                          onMouseEnter={() => {
+                            if (run.status !== 'processing' && run.status !== 'pending') {
+                              prefetchRunResults(run.id);
+                            }
+                          }}
+                          onFocus={() => {
+                            if (run.status !== 'processing' && run.status !== 'pending') {
+                              prefetchRunResults(run.id);
+                            }
+                          }}
                           disabled={run.status === 'processing' || run.status === 'pending'}
                         >
                           View Results
@@ -641,6 +713,18 @@ const ApplicationDetails: React.FC = () => {
                 ))}
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={appData.run_history.length}
+              page={runPage}
+              onPageChange={(_, newPage) => setRunPage(newPage)}
+              rowsPerPage={runsPerPage}
+              onRowsPerPageChange={(event) => {
+                setRunsPerPage(parseInt(event.target.value, 10));
+                setRunPage(0);
+              }}
+              rowsPerPageOptions={[5, 10, 20]}
+            />
           </TableContainer>
         )}
       </Paper>
