@@ -18,6 +18,17 @@ import {
   Stack,
   Divider,
   Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  List,
+  ListItem,
+  ListItemText,
 } from '@mui/material';
 import {
   CloudUpload,
@@ -27,6 +38,7 @@ import {
   Error,
   HourglassEmpty,
   RateReview,
+  CompareArrows,
 } from '@mui/icons-material';
 import api from '../api/client';
 
@@ -55,6 +67,42 @@ interface ApplicationDetailsData {
   run_history: RunHistoryItem[];
 }
 
+interface ComparisonFinding {
+  rule_id: string;
+  title: string;
+  status: string;
+  severity: string;
+  message: string;
+  document_id?: number;
+  document_name?: string | null;
+  from_status?: string;
+  to_status?: string;
+}
+
+interface ComparisonFieldChange {
+  field: string;
+  value?: string;
+  old_value?: string;
+  new_value?: string;
+  document_id?: number;
+  document_name?: string | null;
+}
+
+interface RunComparison {
+  run_a: { id: number; created_at: string | null };
+  run_b: { id: number; created_at: string | null };
+  findings: {
+    new_issues: ComparisonFinding[];
+    resolved_issues: ComparisonFinding[];
+    status_changes: ComparisonFinding[];
+  };
+  extracted_fields: {
+    added: ComparisonFieldChange[];
+    removed: ComparisonFieldChange[];
+    changed: ComparisonFieldChange[];
+  };
+}
+
 const ApplicationDetails: React.FC = () => {
   const { applicationId } = useParams<{ applicationId: string }>();
   const navigate = useNavigate();
@@ -62,10 +110,23 @@ const ApplicationDetails: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [appData, setAppData] = useState<ApplicationDetailsData | null>(null);
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [compareRunIdA, setCompareRunIdA] = useState<number | ''>('');
+  const [compareRunIdB, setCompareRunIdB] = useState<number | ''>('');
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState('');
+  const [comparison, setComparison] = useState<RunComparison | null>(null);
 
   useEffect(() => {
     loadApplicationDetails();
   }, [applicationId]);
+
+  useEffect(() => {
+    if (appData?.run_history.length && appData.run_history.length >= 2) {
+      setCompareRunIdB(appData.run_history[0].id);
+      setCompareRunIdA(appData.run_history[1].id);
+    }
+  }, [appData]);
 
   const loadApplicationDetails = async () => {
     if (!applicationId) {
@@ -125,6 +186,35 @@ const ApplicationDetails: React.FC = () => {
 
   const handleViewResults = (runId: number) => {
     navigate(`/applications/${applicationId}/runs/${runId}`);
+  };
+
+  const handleOpenCompare = () => {
+    setCompareError('');
+    setComparison(null);
+    setCompareOpen(true);
+  };
+
+  const handleCompareRuns = async () => {
+    if (!compareRunIdA || !compareRunIdB) {
+      setCompareError('Select two runs to compare.');
+      return;
+    }
+    if (compareRunIdA === compareRunIdB) {
+      setCompareError('Please select two different runs.');
+      return;
+    }
+
+    try {
+      setCompareLoading(true);
+      setCompareError('');
+      const response = await api.compareRuns(compareRunIdA, compareRunIdB);
+      setComparison(response);
+    } catch (err: any) {
+      console.error('Failed to compare runs:', err);
+      setCompareError(err.response?.data?.detail || err.message || 'Failed to compare runs');
+    } finally {
+      setCompareLoading(false);
+    }
   };
 
   if (loading) {
@@ -194,6 +284,15 @@ const ApplicationDetails: React.FC = () => {
             >
               Upload New Version
             </Button>
+            {appData.run_history.length >= 2 && (
+              <Button
+                variant="outlined"
+                startIcon={<CompareArrows />}
+                onClick={handleOpenCompare}
+              >
+                Compare Runs
+              </Button>
+            )}
           </Stack>
         </Box>
 
@@ -241,6 +340,194 @@ const ApplicationDetails: React.FC = () => {
           </Grid>
         </Grid>
       </Paper>
+
+      <Dialog open={compareOpen} onClose={() => setCompareOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Compare Runs</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <FormControl fullWidth>
+                <InputLabel id="compare-run-a-label">Base Run</InputLabel>
+                <Select
+                  labelId="compare-run-a-label"
+                  value={compareRunIdA}
+                  label="Base Run"
+                  onChange={(event) => setCompareRunIdA(event.target.value as number)}
+                >
+                  {appData.run_history.map((run) => (
+                    <MenuItem key={run.id} value={run.id}>
+                      Run #{run.id} • {new Date(run.created_at).toLocaleDateString('en-GB')}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl fullWidth>
+                <InputLabel id="compare-run-b-label">Comparison Run</InputLabel>
+                <Select
+                  labelId="compare-run-b-label"
+                  value={compareRunIdB}
+                  label="Comparison Run"
+                  onChange={(event) => setCompareRunIdB(event.target.value as number)}
+                >
+                  {appData.run_history.map((run) => (
+                    <MenuItem key={run.id} value={run.id}>
+                      Run #{run.id} • {new Date(run.created_at).toLocaleDateString('en-GB')}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Stack>
+
+            {compareError && <Alert severity="error">{compareError}</Alert>}
+
+            {compareLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                <CircularProgress size={24} />
+              </Box>
+            )}
+
+            {comparison && !compareLoading && (
+              <Stack spacing={3}>
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Findings Changes
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    New issues: {comparison.findings.new_issues.length} • Resolved issues: {comparison.findings.resolved_issues.length} • Status changes: {comparison.findings.status_changes.length}
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="subtitle2">New Issues</Typography>
+                      {comparison.findings.new_issues.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No new issues.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.findings.new_issues.map((item) => (
+                            <ListItem key={`new-${item.rule_id}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.title} • ${item.status.toUpperCase()}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Resolved Issues</Typography>
+                      {comparison.findings.resolved_issues.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No resolved issues.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.findings.resolved_issues.map((item) => (
+                            <ListItem key={`resolved-${item.rule_id}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.title} • ${item.status.toUpperCase()}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Status Changes</Typography>
+                      {comparison.findings.status_changes.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No status changes.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.findings.status_changes.map((item) => (
+                            <ListItem key={`change-${item.rule_id}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.title} • ${item.from_status} → ${item.to_status}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Extracted Field Changes
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Added: {comparison.extracted_fields.added.length} • Removed: {comparison.extracted_fields.removed.length} • Updated: {comparison.extracted_fields.changed.length}
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="subtitle2">Added Fields</Typography>
+                      {comparison.extracted_fields.added.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No added fields.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.extracted_fields.added.map((item) => (
+                            <ListItem key={`added-${item.field}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.field}: ${item.value}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Removed Fields</Typography>
+                      {comparison.extracted_fields.removed.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No removed fields.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.extracted_fields.removed.map((item) => (
+                            <ListItem key={`removed-${item.field}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.field}: ${item.value}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Updated Fields</Typography>
+                      {comparison.extracted_fields.changed.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No updated fields.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.extracted_fields.changed.map((item) => (
+                            <ListItem key={`changed-${item.field}-${item.document_id}`}>
+                              <ListItemText
+                                primary={`${item.field}: ${item.old_value} → ${item.new_value}`}
+                                secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+              </Stack>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCompareOpen(false)} variant="text">
+            Close
+          </Button>
+          <Button
+            onClick={handleCompareRuns}
+            variant="contained"
+            disabled={compareLoading}
+          >
+            Compare
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Run History */}
       <Paper elevation={2} sx={{ p: 3 }}>

@@ -148,6 +148,13 @@ export const api = {
     return response.data;
   },
 
+  compareRuns: async (runIdA: number, runIdB: number) => {
+    const response = await apiClient.get('/api/v1/runs/compare', {
+      params: { run_id_a: runIdA, run_id_b: runIdB },
+    });
+    return response.data;
+  },
+
   // Validation checks
   getValidationChecks: async (submissionId: number) => {
     const response = await apiClient.get(`/api/v1/submissions/${submissionId}/checks`);
