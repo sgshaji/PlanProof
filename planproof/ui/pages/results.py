@@ -11,6 +11,7 @@ from datetime import datetime
 from planproof.ui.run_orchestrator import get_run_results
 from planproof.ui.components.document_viewer import render_document_viewer, check_pdf_library
 from planproof.services.officer_override import create_override, get_override_history
+from planproof.ui.utils import handle_ui_errors, show_error, show_empty_state, with_spinner
 from planproof.db import Database
 
 LOGGER = logging.getLogger(__name__)
@@ -346,6 +347,7 @@ def _render_document_viewer_section():
     )
 
 
+@handle_ui_errors
 def render():
     """Render the results page."""
     st.title("📋 Validation Results")
@@ -374,20 +376,25 @@ def render():
     )
     
     if not run_id_input:
-        st.info("Enter a run ID to view results, or go to Upload page to start a new run.")
+        show_empty_state(
+            icon="📋",
+            title="No Run Selected",
+            message="Enter a run ID to view results, or go to Upload page to start a new run."
+        )
         return
     
     try:
         run_id = int(run_id_input)
     except ValueError:
-        st.error("Run ID must be a number")
+        show_error("Run ID must be a number")
         return
     
     # Fetch results
-    results = get_run_results(run_id)
+    with with_spinner("Loading results..."):
+        results = get_run_results(run_id)
     
     if "error" in results:
-        st.error(results["error"])
+        show_error(results["error"])
         return
     
     # Check if document viewer should be shown

@@ -1,0 +1,51 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - button [ref=e6] [cursor=pointer]:
+        - img [ref=e7]
+      - generic [ref=e9]: Planning Application Validation System
+  - navigation
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - heading "📤 New Planning Application" [level=4] [ref=e12]
+      - paragraph [ref=e13]: Upload planning documents for automated validation
+      - generic [ref=e16]:
+        - generic [ref=e17]:
+          - generic:
+            - text: Application Reference
+            - generic: "*"
+          - generic [ref=e18]:
+            - textbox "Application Reference" [ref=e19]:
+              - /placeholder: e.g., APP-2025-001
+            - group:
+              - generic: Application Reference *
+        - generic [ref=e20]:
+          - generic: Applicant Name (Optional)
+          - generic [ref=e21]:
+            - textbox "Applicant Name (Optional)" [ref=e22]:
+              - /placeholder: Enter applicant name
+            - group:
+              - generic: Applicant Name (Optional)
+        - generic [ref=e23]:
+          - heading "Upload Documents" [level=6] [ref=e24]
+          - generic [ref=e25] [cursor=pointer]:
+            - button "Choose File" [ref=e26]
+            - img [ref=e27]
+            - paragraph [ref=e29]: Drag & drop PDF files here
+            - paragraph [ref=e30]: or click to browse (Max 200MB per file)
+        - generic [ref=e31]:
+          - heading "Selected Files (1)" [level=6] [ref=e32]
+          - generic [ref=e33]:
+            - generic [ref=e34]:
+              - paragraph [ref=e35]: test-document.pdf
+              - generic [ref=e37]: 0.00 MB
+            - button [ref=e38] [cursor=pointer]:
+              - img [ref=e39]
+        - button "Start Validation" [disabled]:
+          - generic:
+            - img
+          - text: Start Validation
+```

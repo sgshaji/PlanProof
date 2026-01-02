@@ -4,12 +4,24 @@ My Cases Page - List all applications with version tracking and delta support.
 
 import streamlit as st
 import time
+import logging
 from typing import List, Dict, Any
 from planproof.db import Database, Application, Submission
 from planproof.ui.ui_components import render_status_badge, render_version_badge
+from planproof.ui.utils import (
+    handle_ui_errors,
+    safe_db_operation,
+    show_success,
+    show_error,
+    show_empty_state,
+    with_spinner
+)
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
 
+
+@safe_db_operation
 def get_all_cases(page: int = 1, page_size: int = 20) -> tuple[List[Dict[str, Any]], int]:
     """
     Fetch all applications with their latest submissions.
@@ -126,6 +138,7 @@ def get_all_cases(page: int = 1, page_size: int = 20) -> tuple[List[Dict[str, An
         session.close()
 
 
+@handle_ui_errors
 def render():
     """Render the My Cases page."""
 
@@ -164,23 +177,19 @@ def render():
 
     # Fetch cases with pagination
     page_size = 20
-    with st.spinner("Loading cases..."):
-        cases, total_count = get_all_cases(page=st.session_state.cases_page, page_size=page_size)
+    with with_spinner("Loading cases..."):
+        result = get_all_cases(page=st.session_state.cases_page, page_size=page_size)
+        if result is None:
+            show_error("Failed to load cases. Please check database connection.")
+            return
+        cases, total_count = result
     
     if not cases:
-        st.markdown("""
-        <div style="
-            text-align: center;
-            padding: 64px 24px;
-            background: white;
-            border-radius: 12px;
-            border: 1px solid #e5e7eb;
-        ">
-            <div style="font-size: 48px; margin-bottom: 16px;">📋</div>
-            <h3 style="color: #111827; margin-bottom: 8px;">No Applications Yet</h3>
-            <p style="color: #6b7280;">Upload your first planning application to get started</p>
-        </div>
-        """, unsafe_allow_html=True)
+        show_empty_state(
+            icon="📋",
+            title="No Applications Yet",
+            message="Upload your first planning application to get started"
+        )
         return
     
     # Filter cases by search query
@@ -403,20 +412,21 @@ def render_revision_form(parent_case: Dict[str, Any]):
     with col2:
         if st.button("Submit Revision", type="primary", disabled=not uploaded_files, use_container_width=True):
             if not uploaded_files:
-                st.error("Please upload at least one document")
+                show_error("Please upload at least one document")
                 return
             
             try:
                 # Create V1 submission linked to V0
                 from planproof.ui.run_orchestrator import start_run
                 
-                run_id = start_run(
-                    app_ref=parent_case['ref'],
-                    files=list(uploaded_files),
-                    parent_submission_id=parent_case['submission_id']
-                )
+                with with_spinner("Creating revision..."):
+                    run_id = start_run(
+                        app_ref=parent_case['ref'],
+                        files=list(uploaded_files),
+                        parent_submission_id=parent_case['submission_id']
+                    )
                 
-                st.success(f"✓ Revision created successfully! Processing V1...")
+                show_success(f"Revision created successfully! Processing V1...")
                 st.session_state.show_revision_form = False
                 st.session_state.revision_parent_case = None
                 st.session_state.processing_status = 'active'
@@ -427,4 +437,5 @@ def render_revision_form(parent_case: Dict[str, Any]):
                 st.rerun()
             
             except Exception as e:
-                st.error(f"Error creating revision: {str(e)}")
+                logger.error(f"Error creating revision: {str(e)}", exc_info=True)
+                show_error(f"Error creating revision: {str(e)}")

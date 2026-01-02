@@ -1,0 +1,65 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]: Planning Application Validation System
+  - navigation [ref=e7]:
+    - generic [ref=e9]:
+      - generic [ref=e11]: PlanProof
+      - list [ref=e12]:
+        - listitem [ref=e13]:
+          - button "New Application" [ref=e14] [cursor=pointer]:
+            - img [ref=e16]
+            - generic [ref=e19]: New Application
+        - listitem [ref=e20]:
+          - button "My Cases" [ref=e21] [cursor=pointer]:
+            - img [ref=e23]
+            - generic [ref=e26]: My Cases
+        - listitem [ref=e27]:
+          - button "All Runs" [ref=e28] [cursor=pointer]:
+            - img [ref=e30]
+            - generic [ref=e33]: All Runs
+        - listitem [ref=e34]:
+          - button "Results" [ref=e35] [cursor=pointer]:
+            - img [ref=e37]
+            - generic [ref=e40]: Results
+        - listitem [ref=e41]:
+          - button "Dashboard" [ref=e42] [cursor=pointer]:
+            - img [ref=e44]
+            - generic [ref=e47]: Dashboard
+  - main [ref=e48]:
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - heading "🔍 All Validation Runs" [level=4] [ref=e51]
+        - button "Refresh" [ref=e52] [cursor=pointer]:
+          - img [ref=e54]
+          - text: Refresh
+      - generic [ref=e56]:
+        - generic [ref=e59]:
+          - textbox "Search by run ID or application reference..." [ref=e60]
+          - group
+        - generic [ref=e62]:
+          - generic [ref=e63]: Status
+          - generic [ref=e64]:
+            - combobox [ref=e65] [cursor=pointer]: All
+            - textbox: all
+            - img
+            - group:
+              - generic: Status
+      - generic [ref=e66]:
+        - generic [ref=e70]:
+          - generic [ref=e71]:
+            - 'heading "Run #1" [level=6] [ref=e72]'
+            - text: ui_single
+          - paragraph [ref=e74]: APP-2025-001
+          - generic [ref=e77]: completed
+          - generic [ref=e78]: 1/1/2025, 3:30:00 PM
+        - generic [ref=e82]:
+          - generic [ref=e83]:
+            - 'heading "Run #2" [level=6] [ref=e84]'
+            - text: ui_batch
+          - paragraph [ref=e86]: APP-2025-002
+          - generic [ref=e89]: running
+          - generic [ref=e90]: 1/2/2025, 4:30:00 PM
+```

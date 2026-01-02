@@ -1,0 +1,63 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e6]: Planning Application Validation System
+  - navigation [ref=e7]:
+    - generic [ref=e9]:
+      - generic [ref=e11]: PlanProof
+      - list [ref=e12]:
+        - listitem [ref=e13]:
+          - button "New Application" [ref=e14] [cursor=pointer]:
+            - img [ref=e16]
+            - generic [ref=e19]: New Application
+        - listitem [ref=e20]:
+          - button "My Cases" [ref=e21] [cursor=pointer]:
+            - img [ref=e23]
+            - generic [ref=e26]: My Cases
+        - listitem [ref=e27]:
+          - button "All Runs" [ref=e28] [cursor=pointer]:
+            - img [ref=e30]
+            - generic [ref=e33]: All Runs
+        - listitem [ref=e34]:
+          - button "Results" [ref=e35] [cursor=pointer]:
+            - img [ref=e37]
+            - generic [ref=e40]: Results
+        - listitem [ref=e41]:
+          - button "Dashboard" [ref=e42] [cursor=pointer]:
+            - img [ref=e44]
+            - generic [ref=e47]: Dashboard
+  - main [ref=e48]:
+    - generic [ref=e49]:
+      - heading "📤 New Planning Application" [level=4] [ref=e50]
+      - paragraph [ref=e51]: Upload planning documents for automated validation
+      - generic [ref=e54]:
+        - generic [ref=e55]:
+          - generic:
+            - text: Application Reference
+            - generic: "*"
+          - generic [ref=e56]:
+            - textbox "Application Reference" [ref=e57]:
+              - /placeholder: e.g., APP-2025-001
+            - group:
+              - generic: Application Reference *
+        - generic [ref=e58]:
+          - generic: Applicant Name (Optional)
+          - generic [ref=e59]:
+            - textbox "Applicant Name (Optional)" [ref=e60]:
+              - /placeholder: Enter applicant name
+            - group:
+              - generic: Applicant Name (Optional)
+        - generic [ref=e61]:
+          - heading "Upload Documents" [level=6] [ref=e62]
+          - generic [ref=e63] [cursor=pointer]:
+            - button "Choose File" [ref=e64]
+            - img [ref=e65]
+            - paragraph [ref=e67]: Drag & drop PDF files here
+            - paragraph [ref=e68]: or click to browse (Max 200MB per file)
+        - button "Start Validation" [disabled]:
+          - generic:
+            - img
+          - text: Start Validation
+```

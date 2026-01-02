@@ -78,12 +78,16 @@ async def upload_document(
     settings = get_settings()
     
     # Create run record
-    run = db.create_run(metadata={
-        "application_ref": application_ref,
-        "filename": file.filename,
-        "document_type": document_type,
-        "source": "api"
-    })
+    run = db.create_run(
+        run_type="api_upload",
+        application_id=None,  # Will be set later after application is created
+        metadata={
+            "application_ref": application_ref,
+            "filename": file.filename,
+            "document_type": document_type,
+            "source": "api"
+        }
+    )
 
     # Save uploaded file to temp location
     tmp_path = None

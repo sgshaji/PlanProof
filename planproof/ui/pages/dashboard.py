@@ -3,12 +3,17 @@ Dashboard page for team leads with aggregate statistics and analytics.
 """
 
 import streamlit as st
+import logging
 from planproof.db import Database, ValidationCheck, ValidationStatus, Case, Submission, OfficerOverride
+from planproof.ui.utils import handle_ui_errors, show_error, with_spinner
 from sqlalchemy import func, and_
 from datetime import datetime, timedelta
 import pandas as pd
 
+logger = logging.getLogger(__name__)
 
+
+@handle_ui_errors
 def render():
     """Render dashboard page."""
     st.title("📊 Team Dashboard")

@@ -5,6 +5,14 @@ New Application Page - Simplified version with native Streamlit components.
 import streamlit as st
 import time
 from pathlib import Path
+from planproof.ui.utils import (
+    handle_ui_errors, safe_db_operation, safe_file_operation,
+    show_success, show_warning, show_info,
+    with_spinner, validate_required_fields
+)
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def render_processing_screen(run_id: int, app_ref: str):
@@ -194,7 +202,7 @@ def render():
                 st.error(f"❌ {error}")
         else:
             # Start processing
-            with st.spinner("Starting validation..."):
+            with with_spinner("Starting validation..."):
                 try:
                     # Start the validation run
                     from planproof.ui.run_orchestrator import start_run
@@ -213,11 +221,15 @@ def render():
                     st.session_state.current_app_ref = app_ref
                     st.session_state.processing = True
 
-                    st.success(f"✅ Validation started! Run ID: {run_id}")
+                    show_success(f"Validation started! Run ID: {run_id}")
+                    time.sleep(1)  # Give user time to see message
                     st.rerun()
 
                 except Exception as e:
-                    st.error(f"❌ Error starting validation: {str(e)}")
+                    logger.error(f"Error starting validation: {str(e)}", exc_info=True)
+                    st.error(f"❌ Unable to start validation. Please ensure all services are running and try again.")
+                    with st.expander("🔍 Technical Details"):
+                        st.code(str(e))
                     st.session_state.processing = False
                     import traceback
                     with st.expander("Error Details"):

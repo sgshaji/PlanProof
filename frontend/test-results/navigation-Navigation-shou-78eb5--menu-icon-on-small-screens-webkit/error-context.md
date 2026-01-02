@@ -1,0 +1,66 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - button [ref=e6] [cursor=pointer]:
+          - img [ref=e7]
+        - generic [ref=e9]: Planning Application Validation System
+    - main [ref=e10]:
+      - generic [ref=e11]:
+        - heading [level=4] [ref=e12]: 📤 New Planning Application
+        - paragraph [ref=e13]: Upload planning documents for automated validation
+        - generic [ref=e16]:
+          - generic [ref=e17]:
+            - generic:
+              - text: Application Reference
+              - generic: "*"
+            - generic [ref=e18]:
+              - textbox [ref=e19]:
+                - /placeholder: e.g., APP-2025-001
+              - group:
+                - generic: Application Reference *
+          - generic [ref=e20]:
+            - generic: Applicant Name (Optional)
+            - generic [ref=e21]:
+              - textbox [ref=e22]:
+                - /placeholder: Enter applicant name
+              - group:
+                - generic: Applicant Name (Optional)
+          - generic [ref=e23]:
+            - heading [level=6] [ref=e24]: Upload Documents
+            - generic [ref=e25] [cursor=pointer]:
+              - button [ref=e26]
+              - img [ref=e27]
+              - paragraph [ref=e29]: Drag & drop PDF files here
+              - paragraph [ref=e30]: or click to browse (Max 200MB per file)
+          - button [disabled]:
+            - generic:
+              - img
+            - text: Start Validation
+  - generic [ref=e33]:
+    - generic [ref=e35]: PlanProof
+    - list [ref=e36]:
+      - listitem [ref=e37]:
+        - button "New Application" [ref=e38] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: New Application
+      - listitem [ref=e44]:
+        - button "My Cases" [ref=e45] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: My Cases
+      - listitem [ref=e51]:
+        - button "All Runs" [ref=e52] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: All Runs
+      - listitem [ref=e58]:
+        - button "Results" [ref=e59] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e64]: Results
+      - listitem [ref=e65]:
+        - button "Dashboard" [ref=e66] [cursor=pointer]:
+          - img [ref=e68]
+          - generic [ref=e71]: Dashboard
+```

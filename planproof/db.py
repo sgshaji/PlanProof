@@ -580,16 +580,16 @@ class Database:
         self,
         run_type: str = "ui_single",
         application_id: Optional[int] = None,
-        submission_id: Optional[int] = None,
+        document_id: Optional[int] = None,
         metadata: Optional[Dict] = None
     ) -> Run:
-        """Create a new run."""
+        """Create a new run - matches Run model fields exactly."""
         session = self.get_session()
         try:
             run = Run(
                 run_type=run_type,
                 application_id=application_id,
-                submission_id=submission_id,
+                document_id=document_id,
                 run_metadata=metadata or {},
                 status="pending"
             )

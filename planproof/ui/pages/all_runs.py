@@ -3,12 +3,23 @@ All Runs Page - Complete run history with filters and search.
 """
 
 import streamlit as st
+import logging
 from typing import List, Dict, Any
 from planproof.db import Database, Run
+from planproof.ui.utils import (
+    handle_ui_errors,
+    safe_db_operation,
+    show_empty_state,
+    show_error,
+    with_spinner
+)
 from datetime import datetime, timedelta
 import json
 
+logger = logging.getLogger(__name__)
 
+
+@safe_db_operation
 def get_all_runs(
     search_query: str = "",
     status_filter: str = "all",
@@ -89,6 +100,7 @@ def get_all_runs(
         session.close()
 
 
+@handle_ui_errors
 def render():
     """Render the All Runs page."""
 
@@ -151,8 +163,8 @@ def render():
 
     # Fetch runs
     page_size = 20
-    with st.spinner("Loading runs..."):
-        runs, total_count = get_all_runs(
+    with with_spinner("Loading runs..."):
+        result = get_all_runs(
             search_query=search_query,
             status_filter=status_filter,
             date_from=date_from,
@@ -160,6 +172,19 @@ def render():
             page=st.session_state.runs_page,
             page_size=page_size
         )
+        if result is None:
+            show_error("Failed to load runs. Please check database connection.")
+            return
+        runs, total_count = result
+
+    # Check if no runs
+    if not runs:
+        show_empty_state(
+            icon="📋",
+            title="No Runs Found",
+            message="No processing runs match your filters"
+        )
+        return
 
     # Summary metrics
     metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
