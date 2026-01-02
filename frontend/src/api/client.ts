@@ -197,12 +197,9 @@ export const api = {
   },
 
   submitReviewDecision: async (runId: number, checkId: number, decision: string, comment?: string) => {
-    // Get real user ID from token
-    const userInfo = await api.getUserInfo();
     const response = await apiClient.post(`/api/v1/runs/${runId}/findings/${checkId}/review`, {
       decision,
       comment: comment || '',
-      user_id: userInfo.user_id || 1, // Fallback to 1 if no user_id
     });
     return response.data;
   },

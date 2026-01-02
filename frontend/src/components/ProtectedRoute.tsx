@@ -33,15 +33,17 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     );
   }
 
+  const needsAuth = requireAuth || (allowedRoles && allowedRoles.length > 0);
+
   // Check if authentication is required
-  if (requireAuth && !isAuthenticated) {
+  if (needsAuth && !isAuthenticated) {
     // Redirect to login with return URL
     return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname)}`} replace />;
   }
 
   // Check if user has required role
-  if (allowedRoles && user) {
-    if (!allowedRoles.includes(user.role)) {
+  if (allowedRoles) {
+    if (!user || !allowedRoles.includes(user.role)) {
       // User doesn't have permission, redirect to home
       return <Navigate to="/new-application" replace />;
     }
