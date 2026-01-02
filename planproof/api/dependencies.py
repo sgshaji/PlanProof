@@ -173,6 +173,41 @@ async def get_current_user(
     )
 
 
+async def require_officer(
+    user: dict = Depends(get_current_user)
+) -> dict:
+    """
+    Require that the authenticated user has an officer role.
+
+    - JWT users must have a role claim that matches OFFICER_ROLES.
+    - API key users are treated as authorized (no role claims available).
+    - If auth is not configured, allow access (MVP mode).
+    """
+    settings = get_settings()
+
+    if user.get("auth_type") == "none":
+        return user
+
+    if user.get("auth_type") == "api_key":
+        return user
+
+    payload = user.get("payload", {}) or {}
+    raw_roles = payload.get("roles") or payload.get("role") or []
+    if isinstance(raw_roles, str):
+        roles = [raw_roles]
+    else:
+        roles = list(raw_roles) if isinstance(raw_roles, (list, tuple, set)) else []
+
+    allowed_roles = {role.strip().lower() for role in settings.officer_roles}
+    if any(role.lower() in allowed_roles for role in roles):
+        return user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Officer role required to perform HIL review actions"
+    )
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Create a JWT access token.

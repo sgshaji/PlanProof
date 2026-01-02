@@ -35,6 +35,9 @@ import {
   Save,
 } from '@mui/icons-material';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
+import LLMCallTracker from '../components/LLMCallTracker';
+import { announceToScreenReader } from '../utils/accessibility';
 
 const DRAWER_WIDTH = 300;
 
@@ -70,9 +73,12 @@ const HILReview: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus | null>(null);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
+  const [hasReviewPermission, setHasReviewPermission] = useState(true);
+  const [llmCalls, setLlmCalls] = useState<any[]>([]);
 
   useEffect(() => {
     loadReviewData();
+    checkUserPermission();
   }, [runId]);
 
   const loadReviewData = async () => {
@@ -92,11 +98,26 @@ const HILReview: React.FC = () => {
       // Load review status
       const status = await api.getReviewStatus(parseInt(runId));
       setReviewStatus(status);
+      
+      // Load LLM calls (mock data for now - replace with actual API)
+      setLlmCalls([]);
     } catch (err: any) {
       console.error('Failed to load review data:', err);
-      setError(err.message || 'Failed to load review data');
+      setError(getApiErrorMessage(err, 'Failed to load review data'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkUserPermission = async () => {
+    try {
+      const hasPermission = await api.checkUserRole(['officer', 'admin', 'reviewer', 'planner']);
+      setHasReviewPermission(hasPermission);
+      if (!hasPermission) {
+        announceToScreenReader('You do not have permission to review findings', 'assertive');
+      }
+    } catch (err) {
+      console.error('Failed to check user permission:', err);
     }
   };
 
@@ -125,6 +146,9 @@ const HILReview: React.FC = () => {
       // Reload review status
       const status = await api.getReviewStatus(parseInt(runId));
       setReviewStatus(status);
+      
+      // Announce to screen readers
+      announceToScreenReader(`Finding ${decision} successfully`);
 
       // Clear comment and move to next finding
       setComment('');
@@ -133,9 +157,30 @@ const HILReview: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Failed to submit decision:', err);
-      setError(err.message || 'Failed to submit decision');
+      setError(getApiErrorMessage(err, 'Failed to submit decision'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDownloadReport = async () => {
+    if (!runId) return;
+
+    try {
+      announceToScreenReader('Downloading review report...', 'polite');
+      const blob = await api.downloadReviewReport(parseInt(runId));
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `review_report_${runId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      announceToScreenReader('Review report downloaded successfully', 'polite');
+    } catch (err: any) {
+      console.error('Failed to download report:', err);
+      setError(getApiErrorMessage(err, 'Failed to download review report'));
     }
   };
 
@@ -153,7 +198,7 @@ const HILReview: React.FC = () => {
       });
     } catch (err: any) {
       console.error('Failed to complete review:', err);
-      setError(err.message || 'Failed to complete review');
+      setError(getApiErrorMessage(err, 'Failed to complete review'));
     } finally {
       setSubmitting(false);
     }
@@ -204,6 +249,27 @@ const HILReview: React.FC = () => {
             variant="outlined"
             startIcon={<ArrowBack />}
             onClick={() => navigate(`/applications/${applicationId}/runs/${runId}`)}
+            aria-label="Navigate back to results page"
+          >
+            Back to Results
+          </Button>
+        </Box>
+      </Container>
+    );
+  }
+  
+  if (!hasReviewPermission) {
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="error">
+          You do not have permission to review findings. Contact an administrator for access.
+        </Alert>
+        <Box sx={{ mt: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBack />}
+            onClick={() => navigate(`/applications/${applicationId}/runs/${runId}`)}
+            aria-label="Navigate back to results page"
           >
             Back to Results
           </Button>
@@ -278,8 +344,19 @@ const HILReview: React.FC = () => {
             startIcon={<ArrowBack />}
             onClick={() => navigate(`/applications/${applicationId}/runs/${runId}`)}
             sx={{ mb: 1 }}
+            aria-label="Navigate back to results page"
           >
             Back to Results
+          </Button>
+          <Button
+            fullWidth
+            variant="contained"
+            color="primary"
+            onClick={handleDownloadReport}
+            sx={{ mb: 1 }}
+            aria-label="Download review report as PDF"
+          >
+            Download Report
           </Button>
           <Button
             fullWidth
@@ -287,7 +364,8 @@ const HILReview: React.FC = () => {
             color="success"
             startIcon={<Save />}
             onClick={() => setShowCompleteDialog(true)}
-            disabled={reviewStatus?.pending_count !== 0}
+            disabled={reviewStatus?.pending_count !== 0 || !hasReviewPermission}
+            aria-label={reviewStatus?.pending_count !== 0 ? `Complete review disabled - ${reviewStatus.pending_count} findings still pending` : 'Complete review'}
           >
             Complete Review
           </Button>
@@ -300,8 +378,17 @@ const HILReview: React.FC = () => {
       </Drawer>
 
       {/* Main Content */}
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+      <Box component="main" sx={{ flexGrow: 1, p: 3 }} id="main-content">
         <Container maxWidth="md">
+          {/* LLM Call Tracker */}
+          {llmCalls.length > 0 && (
+            <LLMCallTracker
+              calls={llmCalls}
+              totalTokens={llmCalls.reduce((sum, call) => sum + call.tokens_used, 0)}
+              totalCalls={llmCalls.length}
+            />
+          )}
+          
           {/* Header */}
           <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -312,12 +399,14 @@ const HILReview: React.FC = () => {
                 <IconButton
                   onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))}
                   disabled={currentIndex === 0}
+                  aria-label="Previous finding"
                 >
                   <NavigateBefore />
                 </IconButton>
                 <IconButton
                   onClick={() => setCurrentIndex(Math.min(findings.length - 1, currentIndex + 1))}
                   disabled={currentIndex === findings.length - 1}
+                  aria-label="Next finding"
                 >
                   <NavigateNext />
                 </IconButton>
@@ -389,7 +478,8 @@ const HILReview: React.FC = () => {
               onChange={(e) => setComment(e.target.value)}
               placeholder="Add any notes or reasoning for your decision..."
               sx={{ mb: 3 }}
-              disabled={submitting}
+              disabled={submitting || !hasReviewPermission}
+              aria-label="Add comment for review decision"
             />
 
             <Stack direction="row" spacing={2} justifyContent="center">
@@ -399,8 +489,9 @@ const HILReview: React.FC = () => {
                 size="large"
                 startIcon={<CheckCircle />}
                 onClick={() => handleDecision('accept')}
-                disabled={submitting}
+                disabled={submitting || !hasReviewPermission}
                 sx={{ minWidth: 140 }}
+                aria-label="Accept this finding"
               >
                 Accept
               </Button>
@@ -410,8 +501,9 @@ const HILReview: React.FC = () => {
                 size="large"
                 startIcon={<Cancel />}
                 onClick={() => handleDecision('reject')}
-                disabled={submitting}
+                disabled={submitting || !hasReviewPermission}
                 sx={{ minWidth: 140 }}
+                aria-label="Reject this finding"
               >
                 Reject
               </Button>
@@ -421,8 +513,9 @@ const HILReview: React.FC = () => {
                 size="large"
                 startIcon={<HelpOutline />}
                 onClick={() => handleDecision('need_info')}
-                disabled={submitting}
+                disabled={submitting || !hasReviewPermission}
                 sx={{ minWidth: 140 }}
+                aria-label="Mark this finding as needing more information"
               >
                 Need Info
               </Button>

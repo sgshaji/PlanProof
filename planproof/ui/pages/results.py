@@ -409,7 +409,7 @@ def render():
     st.markdown("### Summary")
     summary = results.get("summary", {})
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric("Total Documents", summary.get("total_documents", 0))
@@ -419,9 +419,6 @@ def render():
     
     with col3:
         st.metric("Errors", summary.get("errors", 0))
-    
-    with col4:
-        st.metric("LLM Calls", results.get("llm_calls_per_run", 0))
     
     # Validation summary by status
     findings = results.get("validation_findings", [])
@@ -720,4 +717,3 @@ def render():
             )
         else:
             st.info("Bundle not available")
-

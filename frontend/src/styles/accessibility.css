@@ -1,0 +1,142 @@
+/* Accessibility Styles - WCAG 2.1 Level AA Compliance */
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to main content link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #000;
+  color: #fff;
+  padding: 8px 16px;
+  text-decoration: none;
+  z-index: 9999;
+  border-radius: 0 0 4px 0;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* Enhanced focus indicators */
+:focus-visible {
+  outline: 3px solid #1976d2;
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid #1976d2;
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  button,
+  a {
+    border: 2px solid currentColor;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Minimum touch target size (44x44px per WCAG) */
+button,
+a,
+input[type="checkbox"],
+input[type="radio"] {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Ensure proper spacing for interactive elements */
+button + button,
+a + a {
+  margin-left: 8px;
+}
+
+/* Focus within for containers */
+.focus-within:focus-within {
+  outline: 2px solid #1976d2;
+  outline-offset: 2px;
+}
+
+/* Accessible error states */
+.error-message {
+  color: #d32f2f;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+input[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+  border-color: #d32f2f;
+  border-width: 2px;
+}
+
+/* Accessible loading states */
+[aria-busy="true"] {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+/* Accessible disabled states */
+[aria-disabled="true"],
+:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Live region for announcements */
+[role="status"],
+[role="alert"],
+[aria-live] {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+/* Ensure links are distinguishable */
+a {
+  text-decoration: underline;
+}
+
+a:hover,
+a:focus {
+  text-decoration: none;
+}
+
+/* Color contrast helpers */
+.high-contrast-text {
+  color: #000;
+  background-color: #fff;
+}
+
+.high-contrast-text-inverse {
+  color: #fff;
+  background-color: #000;
+}

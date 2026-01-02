@@ -2012,13 +2012,39 @@ def validate_extraction(
                         else:
                             check_status = ValidationStatus.FAIL
 
+                        # Prepare detailed evidence with page/line/bbox info
+                        evidence_details = []
+                        for snippet in evidence_snippets[:10]:  # Top 10 evidence snippets
+                            evidence_details.append({
+                                "page": snippet.get("page"),
+                                "snippet": snippet.get("snippet"),
+                                "evidence_key": snippet.get("evidence_key")
+                            })
+
+                        # Prepare candidate documents list (documents that were scanned)
+                        candidate_documents = []
+                        if document_id:
+                            # Add the current document being validated
+                            from planproof.db import Document
+                            doc = session.query(Document).filter(Document.id == document_id).first()
+                            if doc:
+                                candidate_documents.append({
+                                    "document_id": doc.id,
+                                    "document_name": doc.filename,
+                                    "confidence": 1.0,
+                                    "reason": "Primary document being validated",
+                                    "scanned": True
+                                })
+
                         validation_check = ValidationCheck(
                             submission_id=submission_id,
                             document_id=document_id,
                             rule_id_string=rule.rule_id,
                             status=check_status,
                             explanation=finding["message"],
-                            evidence_ids=evidence_ids if evidence_ids else None
+                            evidence_ids=evidence_ids if evidence_ids else None,
+                            evidence_details=evidence_details if evidence_details else None,
+                            candidate_documents=candidate_documents if candidate_documents else None
                         )
                         session.add(validation_check)
                     except Exception as exc:
@@ -2041,12 +2067,27 @@ def validate_extraction(
                 # Write to ValidationCheck table if enabled
                 if session:
                     try:
+                        # Prepare candidate documents list (documents that were scanned)
+                        candidate_documents = []
+                        if document_id:
+                            from planproof.db import Document
+                            doc = session.query(Document).filter(Document.id == document_id).first()
+                            if doc:
+                                candidate_documents.append({
+                                    "document_id": doc.id,
+                                    "document_name": doc.filename,
+                                    "confidence": 1.0,
+                                    "reason": "Primary document being validated",
+                                    "scanned": True
+                                })
+
                         validation_check = ValidationCheck(
                             submission_id=submission_id,
                             document_id=document_id,
                             rule_id_string=rule.rule_id,
                             status=ValidationStatus.PASS,
-                            explanation="All required fields present."
+                            explanation="All required fields present.",
+                            candidate_documents=candidate_documents if candidate_documents else None
                         )
                         session.add(validation_check)
                     except Exception as exc:

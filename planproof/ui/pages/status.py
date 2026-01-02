@@ -80,15 +80,13 @@ def render():
                             summary = json.load(f)
                         
                         # Display summary
-                        col1, col2, col3, col4 = st.columns(4)
+                        col1, col2, col3 = st.columns(3)
                         with col1:
                             st.metric("Total Documents", summary.get("summary", {}).get("total_documents", 0))
                         with col2:
                             st.metric("Processed", summary.get("summary", {}).get("processed", 0))
                         with col3:
                             st.metric("Errors", summary.get("summary", {}).get("errors", 0))
-                        with col4:
-                            st.metric("LLM Calls", summary.get("llm_calls_per_run", 0))
                         
                         # Show errors if any
                         if summary.get("errors"):
@@ -150,4 +148,3 @@ def render():
     if auto_refresh:
         time.sleep(2)
         st.rerun()
-

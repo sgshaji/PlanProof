@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Box, Card, CardContent, Grid, Typography, CircularProgress } from '@mui/material';
+import { Box, Card, CardContent, Grid, Typography, Skeleton, Alert } from '@mui/material';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -10,10 +11,12 @@ export default function Dashboard() {
     failed: 0
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const loadStats = async () => {
       try {
+        setError('');
         const [applications, runs] = await Promise.all([
           api.getApplications(1, 100),
           api.getRuns(1, 100)
@@ -30,6 +33,7 @@ export default function Dashboard() {
         });
       } catch (err) {
         console.error('Failed to load stats:', err);
+        setError(getApiErrorMessage(err, 'Failed to load dashboard stats.'));
       } finally {
         setLoading(false);
       }
@@ -39,8 +43,31 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 400 }}>
-        <CircularProgress />
+      <Box>
+        <Typography variant="h4" gutterBottom fontWeight="bold">
+          📊 Dashboard
+        </Typography>
+        <Typography variant="body1" color="text.secondary" mb={3}>
+          Analytics and insights
+        </Typography>
+        <Grid container spacing={3}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Grid item xs={12} md={3} key={index}>
+              <Card>
+                <CardContent>
+                  <Skeleton variant="text" width="40%" height={40} />
+                  <Skeleton variant="text" width="60%" />
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+        <Card sx={{ mt: 3 }}>
+          <CardContent>
+            <Skeleton variant="text" width="30%" />
+            <Skeleton variant="text" width="60%" />
+          </CardContent>
+        </Card>
       </Box>
     );
   }
@@ -53,6 +80,11 @@ export default function Dashboard() {
       <Typography variant="body1" color="text.secondary" mb={3}>
         Analytics and insights
       </Typography>
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={3}>

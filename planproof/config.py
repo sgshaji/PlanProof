@@ -82,6 +82,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(default="", alias="JWT_SECRET_KEY")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_expiration_minutes: int = Field(default=60, alias="JWT_EXPIRATION_MINUTES")
+    officer_roles: list[str] = Field(default=["officer", "admin"], alias="OFFICER_ROLES")
 
     @field_validator("log_level")
     @classmethod

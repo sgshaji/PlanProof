@@ -3,22 +3,32 @@ Human-in-Loop Review Endpoints
 """
 
 from typing import List, Optional
+import io
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from planproof.api.dependencies import get_db, get_current_user
+from planproof.api.dependencies import get_db, require_officer
 from planproof.db import Database, Run, ValidationCheck, ReviewDecision
 from planproof.db import utcnow
+from planproof.services.review_report_service import generate_review_report_pdf
 
 router = APIRouter()
+
+
+# Role-based access control helper
+def check_review_permission(user: dict) -> bool:
+    """Check if user has permission to perform HIL reviews."""
+    allowed_roles = ['officer', 'admin', 'reviewer', 'planner']
+    user_role = user.get('role', 'guest')
+    return user_role in allowed_roles
 
 
 class ReviewDecisionRequest(BaseModel):
     """Request to submit a review decision."""
     decision: str  # accept, reject, need_info
     comment: Optional[str] = None
-    reviewer_id: str
 
 
 class ReviewDecisionResponse(BaseModel):
@@ -45,7 +55,7 @@ async def submit_review_decision(
     check_id: int,
     request: ReviewDecisionRequest,
     db: Database = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(require_officer)
 ) -> ReviewDecisionResponse:
     """
     Submit a Human-in-Loop review decision for a validation finding.
@@ -58,13 +68,19 @@ async def submit_review_decision(
     ```json
     {
         "decision": "accept|reject|need_info",
-        "comment": "Optional explanation",
-        "reviewer_id": "officer@council.gov"
+        "comment": "Optional explanation"
     }
     ```
     """
     session = db.get_session()
     try:
+        # Check user permission
+        if not check_review_permission(user):
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to submit review decisions"
+            )
+        
         # Validate run exists
         run = session.query(Run).filter(Run.id == run_id).first()
         if not run:
@@ -93,7 +109,7 @@ async def submit_review_decision(
             # Update existing review
             existing.decision = request.decision
             existing.comment = request.comment
-            existing.reviewer_id = request.reviewer_id
+            existing.reviewer_id = user.get("user_id", "unknown")
             existing.reviewed_at = utcnow()
             session.commit()
             review_id = existing.id
@@ -102,7 +118,7 @@ async def submit_review_decision(
             review = ReviewDecision(
                 validation_check_id=check_id,
                 run_id=run_id,
-                reviewer_id=request.reviewer_id,
+                reviewer_id=user.get("user_id", "unknown"),
                 decision=request.decision,
                 comment=request.comment,
                 reviewed_at=utcnow()
@@ -127,7 +143,7 @@ async def submit_review_decision(
 async def get_review_status(
     run_id: int,
     db: Database = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(require_officer)
 ) -> ReviewStatusResponse:
     """
     Get review status for a run - how many findings reviewed vs pending.
@@ -201,7 +217,7 @@ async def get_review_status(
 async def complete_review(
     run_id: int,
     db: Database = Depends(get_db),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(require_officer)
 ):
     """
     Mark a run as fully reviewed after all findings have been addressed.
@@ -276,3 +292,26 @@ async def complete_review(
         }
     finally:
         session.close()
+
+
+@router.get("/runs/{run_id}/review-report")
+async def download_review_report(
+    run_id: int,
+    db: Database = Depends(get_db),
+    user: dict = Depends(require_officer)
+):
+    """
+    Download the HIL review report PDF for a reviewed run.
+    """
+    try:
+        pdf_bytes = generate_review_report_pdf(run_id, db=db)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=run-{run_id}-hil-review-report.pdf"
+        },
+    )

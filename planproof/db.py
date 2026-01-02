@@ -41,6 +41,8 @@ class Application(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     application_ref = Column(String(100), unique=True, nullable=False, index=True)
     applicant_name = Column(String(255))
+    site_address = Column(Text, nullable=True)  # Site address
+    proposal_description = Column(Text, nullable=True)  # Proposal/development description
     application_date = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
@@ -265,6 +267,8 @@ class ValidationCheck(Base):
     status = Column(SQLEnum(ValidationStatus), nullable=False, default=ValidationStatus.PENDING)
     explanation = Column(Text, nullable=True)
     evidence_ids = Column(JSON, nullable=True)  # List of evidence IDs
+    evidence_details = Column(JSON, nullable=True)  # Detailed evidence: [{"page": 1, "line": 5, "snippet": "...", "bbox": {...}}]
+    candidate_documents = Column(JSON, nullable=True)  # Possible documents: [{"document_id": 1, "document_name": "...", "confidence": 0.8, "reason": "..."}]
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -515,6 +519,8 @@ class Database:
         self,
         application_ref: str,
         applicant_name: Optional[str] = None,
+        site_address: Optional[str] = None,
+        proposal_description: Optional[str] = None,
         application_date: Optional[datetime] = None
     ) -> Application:
         """Create a new application."""
@@ -523,6 +529,8 @@ class Database:
             app = Application(
                 application_ref=application_ref,
                 applicant_name=applicant_name,
+                site_address=site_address,
+                proposal_description=proposal_description,
                 application_date=application_date
             )
             session.add(app)
@@ -536,6 +544,8 @@ class Database:
         self,
         application_ref: str,
         applicant_name: Optional[str] = None,
+        site_address: Optional[str] = None,
+        proposal_description: Optional[str] = None,
         application_date: Optional[datetime] = None
     ) -> Application:
         """Get existing application or create new one."""
@@ -549,11 +559,28 @@ class Database:
                 app = Application(
                     application_ref=application_ref,
                     applicant_name=applicant_name,
+                    site_address=site_address,
+                    proposal_description=proposal_description,
                     application_date=application_date
                 )
                 session.add(app)
                 session.commit()
                 session.refresh(app)
+            else:
+                # Update fields if provided and not already set
+                updated = False
+                if site_address and not app.site_address:
+                    app.site_address = site_address
+                    updated = True
+                if proposal_description and not app.proposal_description:
+                    app.proposal_description = proposal_description
+                    updated = True
+                if applicant_name and not app.applicant_name:
+                    app.applicant_name = applicant_name
+                    updated = True
+                if updated:
+                    session.commit()
+                    session.refresh(app)
             
             return app
         finally:

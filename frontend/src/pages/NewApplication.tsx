@@ -18,6 +18,7 @@ import {
 import { CloudUpload, Close, CheckCircle, Error as ErrorIcon, Refresh } from '@mui/icons-material';
 import { useDropzone } from 'react-dropzone';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
 
 interface FileProgress {
   fileName: string;
@@ -48,6 +49,7 @@ export default function NewApplication() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [lastRunId, setLastRunId] = useState<number | null>(null);
+  const [createdApplicationId, setCreatedApplicationId] = useState<number | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null);
   const [loadingApplication, setLoadingApplication] = useState(false);
@@ -98,7 +100,7 @@ export default function NewApplication() {
         setApplicantName(details.applicant_name || '');
       } catch (err: any) {
         console.error('Failed to load application for version upload:', err);
-        setError(err.message || 'Failed to load application details for version upload');
+        setError(getApiErrorMessage(err, 'Failed to load application details for version upload'));
       } finally {
         setLoadingApplication(false);
       }
@@ -274,11 +276,14 @@ export default function NewApplication() {
     setFileProgress(initialProgress);
 
     try {
+      let targetApplicationId = existingApplicationId ?? createdApplicationId;
       if (!isVersionUpload) {
-        await api.createApplication({
+        const created = await api.createApplication({
           application_ref: applicationRef.trim(),
           applicant_name: applicantName.trim() || undefined,
         });
+        targetApplicationId = created.id ?? null;
+        setCreatedApplicationId(targetApplicationId);
       }
 
       // Upload files one by one with individual progress tracking
@@ -353,8 +358,8 @@ export default function NewApplication() {
 
         // Navigate to results after 3 seconds (give user time to see success)
         setTimeout(() => {
-          if (lastRunId) {
-            navigate(`/results/${lastRunId}`);
+          if (lastRunId && targetApplicationId) {
+            navigate(`/applications/${targetApplicationId}/runs/${lastRunId}`);
           } else {
             navigate('/my-cases');
           }
@@ -364,18 +369,11 @@ export default function NewApplication() {
       }
     } catch (err: any) {
       console.error('Upload error:', err);
-      let errorMessage = 'Upload failed. Please try again.';
-
-      if (err.message?.includes('Network Error') || err.code === 'ERR_NETWORK') {
-        errorMessage = 'Cannot connect to backend server. Please ensure the backend is running.';
+      const message = getApiErrorMessage(err, 'Upload failed. Please try again.');
+      if (message.includes('network issue') || message.includes('CORS')) {
         setBackendAvailable(false);
-      } else if (err.response?.status === 500) {
-        errorMessage = 'Server error. Please check backend logs.';
-      } else {
-        errorMessage = err.response?.data?.detail || err.message || errorMessage;
       }
-
-      setError(errorMessage);
+      setError(message);
     } finally {
       setUploading(false);
     }
@@ -605,7 +603,7 @@ export default function NewApplication() {
                 {isVersionUpload
                   ? 'New version uploaded successfully!'
                   : 'All files uploaded successfully!'}
-                {lastRunId && ` Run ID: ${lastRunId}.`} Redirecting to results...
+                Redirecting to results...
               </Alert>
             )}
 

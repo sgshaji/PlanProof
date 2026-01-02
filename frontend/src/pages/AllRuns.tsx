@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -14,12 +15,15 @@ import {
   FormControl,
   InputLabel,
   Button,
+  Stack,
 } from '@mui/material';
 import { Refresh } from '@mui/icons-material';
 import { api } from '../api/client';
+import { getApiErrorMessage } from '../api/errorUtils';
 import type { Run } from '../types';
 
 export default function AllRuns() {
+  const navigate = useNavigate();
   const [runs, setRuns] = useState<Run[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -34,7 +38,7 @@ export default function AllRuns() {
       // API returns direct array, not wrapped object
       setRuns(Array.isArray(data) ? data : (data.runs || []));
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to load runs');
+      setError(getApiErrorMessage(err, 'Failed to load runs'));
     } finally {
       setLoading(false);
     }
@@ -46,7 +50,6 @@ export default function AllRuns() {
 
   const filteredRuns = runs.filter((run) =>
     searchQuery === '' ||
-    run.id.toString().includes(searchQuery) ||
     run.application_ref?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -80,7 +83,7 @@ export default function AllRuns() {
         <Grid item xs={12} md={8}>
           <TextField
             fullWidth
-            placeholder="Search by run ID or application reference..."
+            placeholder="Search by application reference..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             size="small"
@@ -144,9 +147,23 @@ export default function AllRuns() {
                       />
                     </Grid>
                     <Grid item xs={12} md={3}>
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(run.started_at).toLocaleString()}
-                      </Typography>
+                      <Stack spacing={1} alignItems="flex-start">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          disabled={!run.application_id}
+                          onClick={() => {
+                            if (run.application_id) {
+                              navigate(`/applications/${run.application_id}/runs/${run.id}`);
+                            }
+                          }}
+                        >
+                          View Results
+                        </Button>
+                        <Typography variant="caption" color="text.secondary">
+                          {new Date(run.started_at).toLocaleString()}
+                        </Typography>
+                      </Stack>
                     </Grid>
                   </Grid>
                   {run.error_message && (

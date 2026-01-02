@@ -228,9 +228,21 @@ async def get_application_details(
             ).first()
             return field.field_value if field else None
 
+        # Update Application fields from latest extraction if not already set
         extracted_address = _get_latest_field_value(["site_address", "address"])
         extracted_proposal = _get_latest_field_value(["proposal_description", "proposed_use"])
         extracted_applicant = _get_latest_field_value(["applicant_name"])
+
+        # Update Application record if we have better data from extraction
+        if extracted_address and not app.site_address:
+            app.site_address = extracted_address
+        if extracted_proposal and not app.proposal_description:
+            app.proposal_description = extracted_proposal
+        if extracted_applicant and not app.applicant_name:
+            app.applicant_name = extracted_applicant
+        
+        if extracted_address or extracted_proposal or extracted_applicant:
+            session.commit()
 
         # Determine overall status from latest run
         latest_status = runs[0].status if runs else "unknown"
@@ -238,8 +250,8 @@ async def get_application_details(
         return {
             "id": app.id,
             "reference_number": app.application_ref,
-            "address": extracted_address or "Not available",
-            "proposal": extracted_proposal or "Not available",
+            "address": app.site_address or extracted_address or "Not available",
+            "proposal": app.proposal_description or extracted_proposal or "Not available",
             "applicant_name": app.applicant_name or extracted_applicant or "Unknown",
             "created_at": app.created_at.isoformat() if app.created_at else None,
             "status": latest_status,

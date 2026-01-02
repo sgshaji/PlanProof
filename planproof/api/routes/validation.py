@@ -2,12 +2,13 @@
 Validation Results & Status Endpoints
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from planproof.api.dependencies import get_db, get_current_user
+from planproof.api.dependencies import get_db, get_current_user, get_storage_client
 from planproof.db import Database, Run, Document, ValidationCheck, Artefact
+from planproof.storage import StorageClient
 
 router = APIRouter()
 
@@ -31,6 +32,8 @@ class ValidationFinding(BaseModel):
     severity: str
     message: Optional[str]
     evidence: Optional[List[Dict[str, Any]]]
+    evidence_details: Optional[List[Dict[str, Any]]] = None  # [{"page": 1, "snippet": "...", "evidence_key": "..."}]
+    candidate_documents: Optional[List[Dict[str, Any]]] = None  # [{"document_id": 1, "document_name": "...", "confidence": 0.8}]
 
 
 class ValidationResults(BaseModel):
@@ -43,6 +46,96 @@ class ValidationResults(BaseModel):
     summary: Dict[str, int]
     findings: List[ValidationFinding]
     artifacts: Dict[str, str]
+
+
+def _parse_blob_uri(blob_uri: str) -> Optional[Tuple[str, str]]:
+    if not blob_uri or not blob_uri.startswith("azure://"):
+        return None
+    path = blob_uri.replace("azure://", "", 1)
+    parts = path.split("/", 2)
+    if len(parts) < 3:
+        return None
+    container = parts[1]
+    blob_path = parts[2]
+    return container, blob_path
+
+
+def _normalize_status(status: str) -> str:
+    return (status or "").strip().lower()
+
+
+def _is_issue_status(status: str) -> bool:
+    normalized = _normalize_status(status)
+    return normalized not in {"pass", "passed"}
+
+
+def _stringify_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    try:
+        import json as json_module
+        return json_module.dumps(value, sort_keys=True, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+def _build_findings_map(
+    checks: List[ValidationCheck],
+    document_lookup: Dict[int, Document]
+) -> Dict[str, Dict[str, Any]]:
+    findings_map: Dict[str, Dict[str, Any]] = {}
+    for check in checks:
+        rule_id = check.rule_id_string or str(check.rule_id)
+        doc_id = check.document_id or 0
+        status_str = check.status.value if hasattr(check.status, "value") else str(check.status)
+        key = f"{rule_id}:{doc_id}"
+        findings_map[key] = {
+            "rule_id": rule_id,
+            "title": rule_id,
+            "status": status_str,
+            "severity": check.rule.severity if check.rule and check.rule.severity else "info",
+            "message": check.explanation or "",
+            "document_id": check.document_id,
+            "document_name": document_lookup.get(check.document_id).filename if check.document_id in document_lookup else None,
+        }
+    return findings_map
+
+
+def _load_extraction_fields(
+    session,
+    storage: StorageClient,
+    documents: List[Document]
+) -> Dict[str, Dict[str, Any]]:
+    fields_map: Dict[str, Dict[str, Any]] = {}
+    for doc in documents:
+        extraction_artefact = session.query(Artefact).filter(
+            Artefact.document_id == doc.id,
+            Artefact.artefact_type == "extraction"
+        ).order_by(Artefact.created_at.desc()).first()
+        if not extraction_artefact or not extraction_artefact.blob_uri:
+            continue
+        parsed = _parse_blob_uri(extraction_artefact.blob_uri)
+        if not parsed:
+            continue
+        container, blob_path = parsed
+        try:
+            extraction_result = storage.read_json_blob(container, blob_path)
+        except Exception:
+            continue
+        fields = extraction_result.get("fields", {}) if isinstance(extraction_result, dict) else {}
+        if not isinstance(fields, dict):
+            continue
+        for field_name, value in fields.items():
+            key = f"{doc.id}:{field_name}"
+            fields_map[key] = {
+                "field": field_name,
+                "value": value,
+                "document_id": doc.id,
+                "document_name": doc.filename,
+            }
+    return fields_map
 
 
 @router.get("/applications/{application_ref}/status")
@@ -246,7 +339,7 @@ async def get_run_results(
         if not run:
             raise HTTPException(status_code=404, detail="Run not found")
         
-        if run.status != "completed":
+        if run.status not in ["completed", "reviewed"]:
             raise HTTPException(
                 status_code=400,
                 detail=f"Run is not completed yet. Status: {run.status}"
@@ -292,6 +385,23 @@ async def get_run_results(
             if check.rule and check.rule.severity:
                 severity = check.rule.severity
             
+            # Fetch detailed evidence from Evidence table if evidence_ids exist
+            evidence_list = []
+            if check.evidence_ids:
+                from planproof.db import Evidence
+                evidences = session.query(Evidence).filter(
+                    Evidence.id.in_(check.evidence_ids)
+                ).all()
+                for ev in evidences:
+                    evidence_list.append({
+                        "id": ev.id,
+                        "page": ev.page_number,
+                        "snippet": ev.snippet[:200] if ev.snippet else "",
+                        "evidence_key": ev.evidence_key,
+                        "confidence": ev.confidence,
+                        "bbox": ev.bbox
+                    })
+            
             findings.append({
                 "id": check.id,
                 "rule_id": check.rule_id_string or str(check.rule_id),
@@ -300,6 +410,8 @@ async def get_run_results(
                 "severity": severity or "info",
                 "message": check.explanation or "",
                 "evidence": check.evidence_ids or [],
+                "evidence_details": check.evidence_details or evidence_list,
+                "candidate_documents": check.candidate_documents or [],
                 "details": check.rule.rule_config if check.rule and check.rule.rule_config else None,
                 "document_name": document_lookup.get(check.document_id).filename if check.document_id in document_lookup else None
             })
@@ -354,6 +466,241 @@ async def get_run_results(
             "extracted_fields": extracted_fields,
             "document_names": [doc.filename for doc in documents],
             "completed_at": run.completed_at.isoformat() if run.completed_at else None
+        }
+    finally:
+        session.close()
+
+
+@router.get("/runs/compare")
+async def compare_runs(
+    run_id_a: int = Query(..., description="Base run ID"),
+    run_id_b: int = Query(..., description="Comparison run ID"),
+    db: Database = Depends(get_db),
+    storage: StorageClient = Depends(get_storage_client),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Compare validation findings and extracted fields between two runs.
+    """
+    session = db.get_session()
+    try:
+        run_a = session.query(Run).filter(Run.id == run_id_a).first()
+        run_b = session.query(Run).filter(Run.id == run_id_b).first()
+
+        if not run_a or not run_b:
+            raise HTTPException(status_code=404, detail="One or both runs not found")
+
+        if run_a.status != "completed" or run_b.status != "completed":
+            raise HTTPException(status_code=400, detail="Both runs must be completed to compare")
+
+        if run_a.application_id and run_b.application_id and run_a.application_id != run_b.application_id:
+            raise HTTPException(status_code=400, detail="Runs must belong to the same application")
+
+        def _load_documents(run: Run) -> List[Document]:
+            documents = list(run.documents) if run.documents else []
+            if not documents and run.document_id:
+                document = session.query(Document).filter(Document.id == run.document_id).first()
+                if document:
+                    documents = [document]
+            return documents
+
+        documents_a = _load_documents(run_a)
+        documents_b = _load_documents(run_b)
+
+        if not documents_a or not documents_b:
+            raise HTTPException(status_code=404, detail="Both runs must have associated documents")
+
+        doc_lookup_a = {doc.id: doc for doc in documents_a}
+        doc_lookup_b = {doc.id: doc for doc in documents_b}
+
+        checks_a = session.query(ValidationCheck).filter(
+            ValidationCheck.document_id.in_([doc.id for doc in documents_a])
+        ).all()
+        checks_b = session.query(ValidationCheck).filter(
+            ValidationCheck.document_id.in_([doc.id for doc in documents_b])
+        ).all()
+
+        findings_a = _build_findings_map(checks_a, doc_lookup_a)
+        findings_b = _build_findings_map(checks_b, doc_lookup_b)
+
+        issues_a = {key for key, val in findings_a.items() if _is_issue_status(val["status"])}
+        issues_b = {key for key, val in findings_b.items() if _is_issue_status(val["status"])}
+
+        new_issues = [findings_b[key] for key in sorted(issues_b - issues_a)]
+        resolved_issues = [findings_a[key] for key in sorted(issues_a - issues_b)]
+
+        status_changes = []
+        for key in sorted(set(findings_a.keys()) & set(findings_b.keys())):
+            status_a = findings_a[key]["status"]
+            status_b = findings_b[key]["status"]
+            if _normalize_status(status_a) != _normalize_status(status_b):
+                status_changes.append({
+                    **findings_b[key],
+                    "from_status": status_a,
+                    "to_status": status_b,
+                })
+
+        fields_a = _load_extraction_fields(session, storage, documents_a)
+        fields_b = _load_extraction_fields(session, storage, documents_b)
+
+        added_fields = []
+        removed_fields = []
+        changed_fields = []
+
+        keys_a = set(fields_a.keys())
+        keys_b = set(fields_b.keys())
+
+        for key in sorted(keys_b - keys_a):
+            item = fields_b[key]
+            added_fields.append({
+                "field": item["field"],
+                "value": _stringify_value(item["value"]),
+                "document_id": item["document_id"],
+                "document_name": item["document_name"],
+            })
+
+        for key in sorted(keys_a - keys_b):
+            item = fields_a[key]
+            removed_fields.append({
+                "field": item["field"],
+                "value": _stringify_value(item["value"]),
+                "document_id": item["document_id"],
+                "document_name": item["document_name"],
+            })
+
+        for key in sorted(keys_a & keys_b):
+            old_value = _stringify_value(fields_a[key]["value"])
+            new_value = _stringify_value(fields_b[key]["value"])
+            if old_value != new_value:
+                item = fields_b[key]
+                changed_fields.append({
+                    "field": item["field"],
+                    "old_value": old_value,
+                    "new_value": new_value,
+                    "document_id": item["document_id"],
+                    "document_name": item["document_name"],
+                })
+
+        return {
+            "run_a": {
+                "id": run_a.id,
+                "created_at": run_a.started_at.isoformat() if run_a.started_at else None,
+            },
+            "run_b": {
+                "id": run_b.id,
+                "created_at": run_b.started_at.isoformat() if run_b.started_at else None,
+            },
+            "findings": {
+                "new_issues": new_issues,
+                "resolved_issues": resolved_issues,
+                "status_changes": status_changes,
+            },
+            "extracted_fields": {
+                "added": added_fields,
+                "removed": removed_fields,
+                "changed": changed_fields,
+            },
+        }
+    finally:
+        session.close()
+
+
+class BNGDecisionRequest(BaseModel):
+    """Request to submit BNG applicability decision."""
+    bng_applicable: bool
+    exemption_reason: Optional[str] = None
+
+
+@router.post("/runs/{run_id}/bng-decision")
+async def submit_bng_decision(
+    run_id: int,
+    request: BNGDecisionRequest,
+    db: Database = Depends(get_db),
+    user: dict = Depends(get_current_user)
+):
+    """
+    Submit BNG (Biodiversity Net Gain) applicability decision for a run.
+    
+    **Path Parameters:**
+    - run_id: Run ID
+    
+    **Request Body:**
+    ```json
+    {
+        "bng_applicable": true,
+        "exemption_reason": "Householder application - BNG not required"
+    }
+    ```
+    """
+    from planproof.db import ExtractedField, Submission
+    
+    session = db.get_session()
+    try:
+        # Validate run exists
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+        
+        # Get submission associated with this run
+        submission = None
+        if run.application_id:
+            from planproof.db import Application
+            app = session.query(Application).filter(Application.id == run.application_id).first()
+            if app and app.submissions:
+                submission = app.submissions[-1]  # Get latest submission
+        
+        if not submission:
+            raise HTTPException(status_code=400, detail="No submission found for this run")
+        
+        # Update or create bng_applicable field
+        bng_field = session.query(ExtractedField).filter(
+            ExtractedField.submission_id == submission.id,
+            ExtractedField.field_name == "bng_applicable"
+        ).first()
+        
+        if bng_field:
+            bng_field.field_value = str(request.bng_applicable).lower()
+            bng_field.confidence = 1.0
+            bng_field.extractor = "user"
+        else:
+            bng_field = ExtractedField(
+                submission_id=submission.id,
+                field_name="bng_applicable",
+                field_value=str(request.bng_applicable).lower(),
+                confidence=1.0,
+                extractor="user"
+            )
+            session.add(bng_field)
+        
+        # Update or create bng_exemption_reason if provided
+        if not request.bng_applicable and request.exemption_reason:
+            exemption_field = session.query(ExtractedField).filter(
+                ExtractedField.submission_id == submission.id,
+                ExtractedField.field_name == "bng_exemption_reason"
+            ).first()
+            
+            if exemption_field:
+                exemption_field.field_value = request.exemption_reason
+                exemption_field.confidence = 1.0
+                exemption_field.extractor = "user"
+            else:
+                exemption_field = ExtractedField(
+                    submission_id=submission.id,
+                    field_name="bng_exemption_reason",
+                    field_value=request.exemption_reason,
+                    confidence=1.0,
+                    extractor="user"
+                )
+                session.add(exemption_field)
+        
+        session.commit()
+        
+        return {
+            "run_id": run_id,
+            "submission_id": submission.id,
+            "bng_applicable": request.bng_applicable,
+            "exemption_reason": request.exemption_reason,
+            "message": "BNG decision recorded successfully"
         }
     finally:
         session.close()
