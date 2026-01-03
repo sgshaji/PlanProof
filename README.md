@@ -172,6 +172,24 @@ python run_api.py
 # Docs at http://localhost:8000/api/docs
 ```
 
+### 6. Troubleshooting
+
+**CORS Errors** (frontend can't connect to backend):
+```powershell
+# Run the diagnostic tool
+.\fix-cors.ps1
+
+# Or see the complete guide
+# CORS_FIX_GUIDE.md
+```
+
+Common issues:
+- Backend not running → `python run_api.py`
+- Missing CORS configuration → Add `API_CORS_ORIGINS` to `.env`
+- Wrong port → Verify frontend uses `http://localhost:8000`
+
+See [CORS_FIX_GUIDE.md](CORS_FIX_GUIDE.md) for detailed troubleshooting.
+
 ---
 
 ## 🏗️ Architecture
@@ -411,6 +429,7 @@ ENABLE_LLM_GATE=true
 | [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment guide |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Contribution guidelines |
 | [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues & solutions |
+| [CORS_FIX_GUIDE.md](CORS_FIX_GUIDE.md) | **CORS error troubleshooting** (frontend-backend connection) |
 | [NEW_UI_IMPLEMENTATION.md](docs/NEW_UI_IMPLEMENTATION.md) | UI features & modification tracking |
 | [DATABASE_CONNECTION_FIX.md](docs/DATABASE_CONNECTION_FIX.md) | Database setup troubleshooting |
 | [QUICKSTART.md](QUICKSTART.md) | Rapid setup guide |
