@@ -45,6 +45,7 @@ import {
 } from '@mui/icons-material';
 import { api } from '../api/client';
 import { getApiErrorMessage } from '../api/errorUtils';
+import BNGDecision from '../components/BNGDecision';
 
 interface ValidationSummary {
   pass: number;
@@ -124,6 +125,9 @@ const ApplicationDetails: React.FC = () => {
   const [runsPerPage, setRunsPerPage] = useState(5);
   const [downloadingReportRunId, setDownloadingReportRunId] = useState<number | null>(null);
   const prefetchedRunsRef = useRef(new Set<number>());
+  const [latestRunResults, setLatestRunResults] = useState<any>(null);
+  const [latestRunLoading, setLatestRunLoading] = useState(false);
+  const [latestRunError, setLatestRunError] = useState('');
 
   useEffect(() => {
     loadApplicationDetails();
@@ -139,6 +143,8 @@ const ApplicationDetails: React.FC = () => {
   useEffect(() => {
     setRunPage(0);
   }, [appData?.run_history.length]);
+
+  const latestRunId = appData?.run_history?.[0]?.id;
 
   const loadApplicationDetails = async () => {
     if (!applicationId) {
@@ -159,6 +165,29 @@ const ApplicationDetails: React.FC = () => {
       setLoading(false);
     }
   };
+
+  const loadLatestRunResults = async (runId: number) => {
+    try {
+      setLatestRunLoading(true);
+      setLatestRunError('');
+      const results = await api.getRunResults(runId);
+      setLatestRunResults(results);
+    } catch (err: any) {
+      console.error('Failed to load latest run results:', err);
+      setLatestRunError(getApiErrorMessage(err, 'Failed to load BNG decision data'));
+    } finally {
+      setLatestRunLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!latestRunId) {
+      setLatestRunResults(null);
+      return;
+    }
+
+    loadLatestRunResults(latestRunId);
+  }, [latestRunId]);
 
   const getStatusColor = (status: string) => {
     const statusMap: Record<string, 'default' | 'info' | 'success' | 'warning' | 'error'> = {
@@ -335,6 +364,34 @@ const ApplicationDetails: React.FC = () => {
     runPage * runsPerPage + runsPerPage
   );
 
+  const resolveBNGStatus = () => {
+    const submissionFields = latestRunResults?.submission_fields || {};
+    const extractedFields = latestRunResults?.extracted_fields || {};
+    const rawApplicable =
+      submissionFields.bng_applicable ??
+      extractedFields.bng_applicable ??
+      latestRunResults?.bng_applicable;
+    let applicable: boolean | null = null;
+    if (typeof rawApplicable === 'boolean') {
+      applicable = rawApplicable;
+    } else if (typeof rawApplicable === 'string') {
+      const normalized = rawApplicable.toLowerCase();
+      if (['true', 'yes', '1'].includes(normalized)) {
+        applicable = true;
+      } else if (['false', 'no', '0'].includes(normalized)) {
+        applicable = false;
+      }
+    }
+
+    const exemptionReason =
+      submissionFields.bng_exemption_reason ??
+      extractedFields.bng_exemption_reason ??
+      latestRunResults?.bng_exemption_reason ??
+      '';
+
+    return { applicable, exemptionReason };
+  };
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       {/* Header */}
@@ -422,6 +479,27 @@ const ApplicationDetails: React.FC = () => {
           </Grid>
         </Grid>
       </Paper>
+
+      {latestRunId && (
+        <Box sx={{ mb: 3 }}>
+          {latestRunError && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {latestRunError}
+            </Alert>
+          )}
+          {latestRunLoading ? (
+            <Paper elevation={2} sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
+              <CircularProgress size={24} />
+            </Paper>
+          ) : (
+            <BNGDecision
+              runId={latestRunId}
+              currentBNGStatus={resolveBNGStatus()}
+              onDecisionSubmitted={() => loadLatestRunResults(latestRunId)}
+            />
+          )}
+        </Box>
+      )}
 
       <Dialog open={compareOpen} onClose={() => setCompareOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Compare Runs</DialogTitle>

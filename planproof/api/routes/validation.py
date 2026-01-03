@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from planproof.api.dependencies import get_db, get_current_user, get_storage_client
-from planproof.db import Database, Run, Document, ValidationCheck, Artefact
+from planproof.db import Database, Run, Document, ValidationCheck, Artefact, Submission, ExtractedField
 from planproof.storage import StorageClient
 
 router = APIRouter()
@@ -445,6 +445,31 @@ async def get_run_results(
                 Artefact.artefact_type == "llm_notes"
             ).count()
         
+        submission_id = None
+        submission_fields: Dict[str, Optional[str]] = {}
+        if run.application_id:
+            latest_submission = session.query(Submission).filter(
+                Submission.planning_case_id == run.application_id
+            ).order_by(Submission.created_at.desc()).first()
+
+            if latest_submission:
+                submission_id = latest_submission.id
+
+                def _get_submission_field(field_name: str) -> Optional[str]:
+                    field = session.query(ExtractedField).filter(
+                        ExtractedField.submission_id == latest_submission.id,
+                        ExtractedField.field_name == field_name
+                    ).order_by(
+                        ExtractedField.confidence.desc().nullslast(),
+                        ExtractedField.created_at.desc()
+                    ).first()
+                    return field.field_value if field else None
+
+                submission_fields = {
+                    "bng_applicable": _get_submission_field("bng_applicable"),
+                    "bng_exemption_reason": _get_submission_field("bng_exemption_reason")
+                }
+
         # Build response with correct structure
         response_summary = {
             "total_documents": len(document_ids),
@@ -459,6 +484,8 @@ async def get_run_results(
         return {
             "run_id": run.id,
             "status": run.status,
+            "submission_id": submission_id,
+            "submission_fields": submission_fields,
             "summary": response_summary,
             "documents": document_entries,
             "findings": findings,

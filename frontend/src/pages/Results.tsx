@@ -36,7 +36,6 @@ import {
 } from '@mui/icons-material';
 import { api } from '../api/client';
 import { getApiErrorMessage } from '../api/errorUtils';
-import BNGDecision from '../components/BNGDecision';
 import DocumentViewer from '../components/DocumentViewer';
 import LLMTransparency from '../components/LLMTransparency';
 import PriorApprovalDocs from '../components/PriorApprovalDocs';
@@ -314,20 +313,6 @@ export default function Results() {
           </Grid>
         </Grid>
       </Paper>
-
-      {/* BNG Decision Component */}
-      <BNGDecision
-        runId={parseInt(runId!)}
-        currentBNGStatus={{
-          applicable: results.extracted_fields?.bng_applicable === 'true'
-            ? true
-            : results.extracted_fields?.bng_applicable === 'false'
-            ? false
-            : null,
-          exemptionReason: results.extracted_fields?.bng_exemption_reason,
-        }}
-        onDecisionSubmitted={() => loadResults(true)}
-      />
 
       {/* Prior Approval Documents - Show if any PA rules are in findings */}
       {findings.some((f: any) => f.rule_id?.startsWith('PA-')) && results.submission_id && (
