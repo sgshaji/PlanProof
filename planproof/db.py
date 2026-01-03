@@ -411,6 +411,7 @@ class IssueResolution(Base):
     # Relationships
     run = relationship("Run", back_populates="issue_resolutions")
     actions = relationship("ResolutionAction", back_populates="issue_resolution", cascade="all, delete-orphan")
+    recheck_history = relationship("RecheckHistory", back_populates="issue_resolution")
 
 
 class ReviewDecision(Base):
