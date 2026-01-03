@@ -60,6 +60,28 @@ def _parse_blob_uri(blob_uri: str) -> Optional[Tuple[str, str]]:
     return container, blob_path
 
 
+def _normalize_llm_calls(
+    llm_notes: Dict[str, Any],
+    fallback_timestamp: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    raw_calls = llm_notes.get("llm_calls") or llm_notes.get("llm_call_details") or []
+    if not isinstance(raw_calls, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for call in raw_calls:
+        if not isinstance(call, dict):
+            continue
+        normalized.append({
+            "timestamp": call.get("timestamp") or fallback_timestamp,
+            "purpose": call.get("purpose") or "LLM call",
+            "rule_type": call.get("rule_type") or "unknown",
+            "tokens_used": int(call.get("tokens_used") or 0),
+            "model": call.get("model") or "unknown",
+            "response_time_ms": int(call.get("response_time_ms") or 0)
+        })
+    return normalized
+
+
 def _normalize_status(status: str) -> str:
     return (status or "").strip().lower()
 
@@ -324,6 +346,7 @@ async def get_validation_results(
 async def get_run_results(
     run_id: int,
     db: Database = Depends(get_db),
+    storage: StorageClient = Depends(get_storage_client),
     user: dict = Depends(get_current_user)
 ):
     """
@@ -439,11 +462,30 @@ async def get_run_results(
         
         # Count LLM calls from artefacts
         llm_count = 0
+        llm_calls: List[Dict[str, Any]] = []
         if document_ids:
-            llm_count = session.query(Artefact).filter(
+            llm_artefacts = session.query(Artefact).filter(
                 Artefact.document_id.in_(document_ids),
                 Artefact.artefact_type == "llm_notes"
-            ).count()
+            ).order_by(Artefact.created_at.asc()).all()
+            llm_count = len(llm_artefacts)
+            for artefact in llm_artefacts:
+                parsed = _parse_blob_uri(artefact.blob_uri)
+                if not parsed:
+                    continue
+                container, blob_path = parsed
+                try:
+                    llm_notes = storage.read_json_blob(container, blob_path)
+                except Exception:
+                    continue
+                llm_calls.extend(
+                    _normalize_llm_calls(
+                        llm_notes,
+                        fallback_timestamp=artefact.created_at.isoformat() if artefact.created_at else None
+                    )
+                )
+        total_tokens = sum(call.get("tokens_used", 0) for call in llm_calls)
+        total_calls = len(llm_calls) if llm_calls else llm_count
         
         submission_id = None
         submission_fields: Dict[str, Optional[str]] = {}
@@ -490,6 +532,11 @@ async def get_run_results(
             "documents": document_entries,
             "findings": findings,
             "llm_calls_per_run": llm_count,
+            "llm_calls": llm_calls,
+            "llm_call_totals": {
+                "total_calls": total_calls,
+                "total_tokens": total_tokens
+            },
             "extracted_fields": extracted_fields,
             "document_names": [doc.filename for doc in documents],
             "completed_at": run.completed_at.isoformat() if run.completed_at else None
