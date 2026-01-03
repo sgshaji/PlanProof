@@ -280,7 +280,11 @@ async def create_application(
     user: dict = Depends(get_current_user)
 ):
     """
-    Create a new planning application.
+    Create a new planning application or return existing one.
+    
+    This endpoint follows "get or create" semantics - if an application with the
+    given reference already exists, it returns that application instead of failing.
+    This allows users to add documents to existing applications without errors.
     
     **Request Body:**
     ```json
@@ -298,10 +302,15 @@ async def create_application(
         ).first()
         
         if existing:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Application {request.application_ref} already exists"
-            )
+            # Return existing application instead of failing
+            return {
+                "id": existing.id,
+                "application_ref": existing.application_ref,
+                "applicant_name": existing.applicant_name,
+                "created_at": existing.created_at.isoformat() if existing.created_at else None,
+                "message": "Using existing application",
+                "existed": True
+            }
         
         # Create new application
         app = db.create_application(
@@ -314,7 +323,8 @@ async def create_application(
             "application_ref": app.application_ref,
             "applicant_name": app.applicant_name,
             "created_at": app.created_at.isoformat() if app.created_at else None,
-            "message": "Application created successfully"
+            "message": "Application created successfully",
+            "existed": False
         }
     finally:
         session.close()

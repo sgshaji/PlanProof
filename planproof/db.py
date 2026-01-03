@@ -983,7 +983,7 @@ class Database:
         """
         Find applications with matching postcode.
         
-        Searches in both Application.postcode and extracted fields.
+        Searches in extracted fields for postcode (Application table doesn't have postcode column).
         
         Args:
             postcode: UK postcode to search for
@@ -1000,10 +1000,21 @@ class Database:
             # Clean postcode (remove spaces)
             cleaned_postcode = postcode.replace(" ", "").upper()
             
-            # Search in Application table
+            # Search in ExtractedField table for postcode field
+            # Note: Application table doesn't have a postcode column,
+            # so we search through extracted fields instead
+            from sqlalchemy import func
+            from planproof.db import ExtractedField, Submission
+            
+            subquery = session.query(Submission.planning_case_id).join(
+                ExtractedField, ExtractedField.submission_id == Submission.id
+            ).filter(
+                ExtractedField.field_name == "postcode",
+                func.replace(func.upper(ExtractedField.field_value), " ", "") == cleaned_postcode
+            ).distinct().subquery()
+            
             query = session.query(Application).filter(
-                Application.postcode.isnot(None),
-                func.replace(func.upper(Application.postcode), " ", "") == cleaned_postcode
+                Application.id.in_(subquery)
             )
             
             if exclude_application_id:
@@ -1011,11 +1022,11 @@ class Database:
             
             applications = query.order_by(Application.created_at.desc()).limit(10).all()
             
-            # TODO: Also search in ExtractedField table for postcode field
-            # if not applications:
-            #     subquery for extracted_fields...
-            
             return applications
+        except Exception as e:
+            # Gracefully handle any errors - don't crash the upload
+            LOGGER.warning(f"Error searching by postcode: {e}")
+            return []
         finally:
             session.close()
 
