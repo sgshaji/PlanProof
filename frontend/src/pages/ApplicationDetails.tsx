@@ -93,6 +93,23 @@ interface ComparisonFieldChange {
   document_name?: string | null;
 }
 
+interface ComparisonDocument {
+  id: number;
+  filename: string;
+  content_hash?: string | null;
+  document_type?: string | null;
+}
+
+interface ComparisonDocumentChange {
+  filename: string;
+  old_content_hashes: string[];
+  new_content_hashes: string[];
+  old_document_types: string[];
+  new_document_types: string[];
+  old_document_ids: number[];
+  new_document_ids: number[];
+}
+
 interface RunComparison {
   run_a: { id: number; created_at: string | null };
   run_b: { id: number; created_at: string | null };
@@ -100,6 +117,11 @@ interface RunComparison {
     new_issues: ComparisonFinding[];
     resolved_issues: ComparisonFinding[];
     status_changes: ComparisonFinding[];
+  };
+  documents: {
+    added_documents: ComparisonDocument[];
+    removed_documents: ComparisonDocument[];
+    changed_documents: ComparisonDocumentChange[];
   };
   extracted_fields: {
     added: ComparisonFieldChange[];
@@ -221,6 +243,27 @@ const ApplicationDetails: React.FC = () => {
       default:
         return null;
     }
+  };
+
+  const formatDocumentMeta = (doc: ComparisonDocument) => {
+    const details: string[] = [];
+    if (doc.document_type) {
+      details.push(`Type: ${doc.document_type}`);
+    }
+    if (doc.content_hash) {
+      details.push(`Hash: ${doc.content_hash}`);
+    }
+    return details.length > 0 ? details.join(' • ') : 'No metadata';
+  };
+
+  const formatDocumentChangeDetail = (
+    label: string,
+    oldValues: string[],
+    newValues: string[]
+  ) => {
+    const oldLabel = oldValues.length > 0 ? oldValues.join(', ') : 'None';
+    const newLabel = newValues.length > 0 ? newValues.join(', ') : 'None';
+    return `${label}: ${oldLabel} → ${newLabel}`;
   };
 
   const handleUploadNewVersion = () => {
@@ -616,6 +659,73 @@ const ApplicationDetails: React.FC = () => {
                               <ListItemText
                                 primary={`${item.title} • ${item.from_status} → ${item.to_status}`}
                                 secondary={item.document_name || 'Unknown document'}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                  </Stack>
+                </Box>
+
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Document Changes
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Added: {comparison.documents.added_documents.length} • Removed: {comparison.documents.removed_documents.length} • Updated: {comparison.documents.changed_documents.length}
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Typography variant="subtitle2">Added Documents</Typography>
+                      {comparison.documents.added_documents.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No added documents.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.documents.added_documents.map((doc) => (
+                            <ListItem key={`doc-added-${doc.id}`}>
+                              <ListItemText
+                                primary={doc.filename}
+                                secondary={formatDocumentMeta(doc)}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Removed Documents</Typography>
+                      {comparison.documents.removed_documents.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No removed documents.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.documents.removed_documents.map((doc) => (
+                            <ListItem key={`doc-removed-${doc.id}`}>
+                              <ListItemText
+                                primary={doc.filename}
+                                secondary={formatDocumentMeta(doc)}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      )}
+                    </Box>
+                    <Box>
+                      <Typography variant="subtitle2">Updated Documents</Typography>
+                      {comparison.documents.changed_documents.length === 0 ? (
+                        <Typography variant="body2" color="text.secondary">No updated documents.</Typography>
+                      ) : (
+                        <List dense>
+                          {comparison.documents.changed_documents.map((doc) => (
+                            <ListItem key={`doc-changed-${doc.filename}`}>
+                              <ListItemText
+                                primary={doc.filename}
+                                secondary={
+                                  [
+                                    formatDocumentChangeDetail('Type', doc.old_document_types, doc.new_document_types),
+                                    formatDocumentChangeDetail('Hash', doc.old_content_hashes, doc.new_content_hashes),
+                                  ].join(' • ')
+                                }
                               />
                             </ListItem>
                           ))}
