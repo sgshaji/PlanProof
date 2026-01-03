@@ -65,22 +65,26 @@ const formatFieldValue = (fieldData: FieldData): string => {
     return value ? 'Yes' : 'No';
   }
   
-  // Handle objects/arrays (like measurements)
-  if (typeof value === 'object') {
-    // If it's an array of measurements
-    if (Array.isArray(value)) {
-      return `${value.length} measurements found`;
-    }
-    // Try to extract meaningful info from object
-    try {
-      const str = JSON.stringify(value);
-      if (str.length > 100) {
-        return 'Complex data - expand to view';
+  // Handle arrays (like measurements)
+  if (Array.isArray(value)) {
+    if (value.length === 0) return 'None found';
+    
+    // For measurements, show readable summary
+    const measurements = value as any[];
+    if (measurements[0]?.value !== undefined && measurements[0]?.unit !== undefined) {
+      const summary = measurements.map(m => `${m.value}${m.unit}`).slice(0, 3).join(', ');
+      if (measurements.length > 3) {
+        return `${measurements.length} measurements: ${summary}...`;
       }
-      return str;
-    } catch {
-      return 'Complex data';
+      return `${measurements.length} measurement${measurements.length > 1 ? 's' : ''}: ${summary}`;
     }
+    
+    return `${value.length} items`;
+  }
+  
+  // Handle objects - show friendly summary instead of JSON
+  if (typeof value === 'object') {
+    return 'Complex data (see details below)';
   }
   
   // Add unit if present
@@ -161,17 +165,6 @@ export default function ExtractedFieldsDisplay({ extractedFields }: ExtractedFie
             >
               {label}
             </Typography>
-            {confidence !== undefined && (
-              <Tooltip title={`Confidence: ${(confidence * 100).toFixed(0)}%`}>
-                <Chip
-                  icon={getConfidenceIcon(confidence)}
-                  label={`${(confidence * 100).toFixed(0)}%`}
-                  size="small"
-                  color={getConfidenceColor(confidence)}
-                  sx={{ height: '22px', fontSize: '0.7rem' }}
-                />
-              </Tooltip>
-            )}
           </Box>
           
           <Typography 
@@ -185,14 +178,6 @@ export default function ExtractedFieldsDisplay({ extractedFields }: ExtractedFie
           >
             {formattedValue}
           </Typography>
-          
-          {typeof fieldData.value === 'object' && fieldData.value !== null && (
-            <Box sx={{ mt: 1, p: 1, bgcolor: 'grey.100', borderRadius: 1, fontSize: '0.75rem', fontFamily: 'monospace', maxHeight: '100px', overflow: 'auto' }}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {JSON.stringify(fieldData.value, null, 2)}
-              </pre>
-            </Box>
-          )}
         </Paper>
       </Grid>
     );

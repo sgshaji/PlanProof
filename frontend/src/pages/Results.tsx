@@ -21,6 +21,7 @@ import {
   Description,
   CheckCircle,
   FindInPage,
+  Assignment,
 } from '@mui/icons-material';
 import { api } from '../api/client';
 import { getApiErrorMessage } from '../api/errorUtils';
@@ -324,7 +325,7 @@ export default function Results() {
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
           <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
             <FindInPage />
-            Extracted Fields ({results.extracted_fields.length})
+            Extracted Fields ({Object.keys(results.extracted_fields).length})
           </Typography>
           <ExtractedFieldsDisplay extractedFields={results.extracted_fields} />
         </Paper>
