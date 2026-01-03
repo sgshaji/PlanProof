@@ -119,6 +119,15 @@ const ApplicationDetails: React.FC = () => {
   const [compareRunIdA, setCompareRunIdA] = useState<number | ''>('');
   const [compareRunIdB, setCompareRunIdB] = useState<number | ''>('');
   const [compareLoading, setCompareLoading] = useState(false);
+
+  const shouldRenderField = (value: unknown) => {
+    if (value === null || value === undefined) return false;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      return trimmed.length > 0 && trimmed.toLowerCase() !== 'not available';
+    }
+    return true;
+  };
   const [compareError, setCompareError] = useState('');
   const [comparison, setComparison] = useState<RunComparison | null>(null);
   const [runPage, setRunPage] = useState(0);
@@ -439,30 +448,36 @@ const ApplicationDetails: React.FC = () => {
 
         {/* Case Metadata */}
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Address
-            </Typography>
-            <Typography variant="body1" gutterBottom>
-              {appData.address}
-            </Typography>
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Applicant
-            </Typography>
-            <Typography variant="body1" gutterBottom>
-              {appData.applicant_name}
-            </Typography>
-          </Grid>
-          <Grid item xs={12}>
-            <Typography variant="subtitle2" color="text.secondary">
-              Proposal
-            </Typography>
-            <Typography variant="body1" gutterBottom>
-              {appData.proposal}
-            </Typography>
-          </Grid>
+          {shouldRenderField(appData.address) && (
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Address
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                {appData.address}
+              </Typography>
+            </Grid>
+          )}
+          {shouldRenderField(appData.applicant_name) && (
+            <Grid item xs={12} md={6}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Applicant
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                {appData.applicant_name}
+              </Typography>
+            </Grid>
+          )}
+          {shouldRenderField(appData.proposal) && (
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Proposal
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                {appData.proposal}
+              </Typography>
+            </Grid>
+          )}
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle2" color="text.secondary">
               Submitted

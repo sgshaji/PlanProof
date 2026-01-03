@@ -484,11 +484,14 @@ export default function Results() {
                       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                         <Description />
                         <Typography variant="subtitle2">
-                          Scanned Documents ({finding.candidate_documents.length})
+                          Possible Matches ({finding.candidate_documents.length})
                         </Typography>
                       </Box>
                     </AccordionSummary>
                     <AccordionDetails>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                        Use 👍 to confirm a match or 👎 to flag an incorrect document.
+                      </Typography>
                       <Stack spacing={1}>
                         {finding.candidate_documents.map((doc: any, docIndex: number) => (
                           <Box
@@ -631,10 +634,13 @@ export default function Results() {
                   <Accordion sx={{ mt: 1, backgroundColor: 'rgba(255,255,255,0.7)' }}>
                     <AccordionSummary expandIcon={<ExpandMore />}>
                       <Typography variant="subtitle2">
-                        Scanned Documents ({finding.candidate_documents.length})
+                        Possible Matches ({finding.candidate_documents.length})
                       </Typography>
                     </AccordionSummary>
                     <AccordionDetails>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                        Use 👍 to confirm a match or 👎 to flag an incorrect document.
+                      </Typography>
                       <Stack spacing={1}>
                         {finding.candidate_documents.map((doc: any, docIndex: number) => (
                           <Box
