@@ -3,6 +3,7 @@ Validation Results & Status Endpoints
 """
 
 from typing import List, Optional, Dict, Any, Tuple
+from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -136,6 +137,26 @@ def _load_extraction_fields(
                 "document_name": doc.filename,
             }
     return fields_map
+
+
+def _serialize_document(document: Document) -> Dict[str, Any]:
+    return {
+        "id": document.id,
+        "filename": document.filename,
+        "content_hash": document.content_hash,
+        "document_type": document.document_type,
+    }
+
+
+def _document_signature(document: Document) -> Tuple[str, str, str]:
+    filename = (document.filename or "").strip().lower()
+    content_hash = (document.content_hash or "").strip().lower()
+    document_type = (document.document_type or "").strip().lower()
+    return filename, content_hash, document_type
+
+
+def _document_name_key(document: Document) -> str:
+    return (document.filename or "").strip().lower()
 
 
 @router.get("/applications/{application_ref}/status")
@@ -543,6 +564,52 @@ async def compare_runs(
         fields_a = _load_extraction_fields(session, storage, documents_a)
         fields_b = _load_extraction_fields(session, storage, documents_b)
 
+        documents_a_by_signature: Dict[Tuple[str, str, str], List[Document]] = defaultdict(list)
+        documents_b_by_signature: Dict[Tuple[str, str, str], List[Document]] = defaultdict(list)
+        documents_a_by_name: Dict[str, List[Document]] = defaultdict(list)
+        documents_b_by_name: Dict[str, List[Document]] = defaultdict(list)
+
+        for doc in documents_a:
+            documents_a_by_signature[_document_signature(doc)].append(doc)
+            documents_a_by_name[_document_name_key(doc)].append(doc)
+
+        for doc in documents_b:
+            documents_b_by_signature[_document_signature(doc)].append(doc)
+            documents_b_by_name[_document_name_key(doc)].append(doc)
+
+        added_documents: List[Dict[str, Any]] = []
+        removed_documents: List[Dict[str, Any]] = []
+        changed_documents: List[Dict[str, Any]] = []
+
+        for signature, docs in documents_b_by_signature.items():
+            extra_docs = docs[len(documents_a_by_signature.get(signature, [])):]
+            for doc in extra_docs:
+                added_documents.append(_serialize_document(doc))
+
+        for signature, docs in documents_a_by_signature.items():
+            extra_docs = docs[len(documents_b_by_signature.get(signature, [])):]
+            for doc in extra_docs:
+                removed_documents.append(_serialize_document(doc))
+
+        for filename in sorted(set(documents_a_by_name.keys()) & set(documents_b_by_name.keys())):
+            docs_a = documents_a_by_name[filename]
+            docs_b = documents_b_by_name[filename]
+            hashes_a = sorted({doc.content_hash for doc in docs_a if doc.content_hash})
+            hashes_b = sorted({doc.content_hash for doc in docs_b if doc.content_hash})
+            types_a = sorted({doc.document_type for doc in docs_a if doc.document_type})
+            types_b = sorted({doc.document_type for doc in docs_b if doc.document_type})
+
+            if hashes_a != hashes_b or types_a != types_b:
+                changed_documents.append({
+                    "filename": docs_b[0].filename if docs_b else docs_a[0].filename,
+                    "old_content_hashes": hashes_a,
+                    "new_content_hashes": hashes_b,
+                    "old_document_types": types_a,
+                    "new_document_types": types_b,
+                    "old_document_ids": [doc.id for doc in docs_a],
+                    "new_document_ids": [doc.id for doc in docs_b],
+                })
+
         added_fields = []
         removed_fields = []
         changed_fields = []
@@ -594,6 +661,11 @@ async def compare_runs(
                 "new_issues": new_issues,
                 "resolved_issues": resolved_issues,
                 "status_changes": status_changes,
+            },
+            "documents": {
+                "added_documents": added_documents,
+                "removed_documents": removed_documents,
+                "changed_documents": changed_documents,
             },
             "extracted_fields": {
                 "added": added_fields,
