@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from planproof.api.dependencies import get_db, get_current_user, get_storage_client
 from planproof.db import Database, Run, Document, ValidationCheck, Artefact, Submission, ExtractedField
 from planproof.storage import StorageClient
+from planproof.services.ux_formatter import format_api_response
 
 router = APIRouter()
 
@@ -580,7 +581,9 @@ async def get_run_results(
             "warning": summary["warning"],
             "needs_review": summary["needs_review"]
         }
-        
+
+        formatted_findings, formatted_extracted_fields = format_api_response(findings, extracted_fields)
+
         return {
             "run_id": run.id,
             "status": run.status,
@@ -588,14 +591,15 @@ async def get_run_results(
             "submission_fields": submission_fields,
             "summary": response_summary,
             "documents": document_entries,
-            "findings": findings,
+            "findings": formatted_findings,
             "llm_calls_per_run": llm_count,
             "llm_calls": llm_calls,
             "llm_call_totals": {
                 "total_calls": total_calls,
                 "total_tokens": total_tokens
             },
-            "extracted_fields": extracted_fields,
+            "extracted_fields": formatted_extracted_fields,
+            "extracted_fields_raw": extracted_fields,
             "document_names": [doc.filename for doc in documents],
             "completed_at": run.completed_at.isoformat() if run.completed_at else None
         }

@@ -41,6 +41,8 @@ import { getApiErrorMessage } from '../api/errorUtils';
 import DocumentViewer from '../components/DocumentViewer';
 import LLMTransparency from '../components/LLMTransparency';
 import PriorApprovalDocs from '../components/PriorApprovalDocs';
+import ExtractedFieldsDisplay from '../components/ExtractedFieldsDisplay';
+import ValidationFindingCard from '../components/ValidationFindingCard';
 
 export default function Results() {
   const { applicationId, runId } = useParams<{ applicationId: string; runId: string }>();
@@ -410,39 +412,13 @@ export default function Results() {
       </Paper>
 
       {/* Extracted Fields */}
-      {results.extracted_fields && Object.keys(results.extracted_fields).length > 0 && (
+      {results.extracted_fields && results.extracted_fields.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
             <FindInPage />
-            Extracted Fields ({Object.keys(results.extracted_fields).length})
+            Extracted Fields ({results.extracted_fields.length})
           </Typography>
-          <Grid container spacing={2}>
-            {Object.entries(results.extracted_fields).map(([fieldName, fieldData]: [string, any]) => (
-              <Grid item xs={12} sm={6} md={4} key={fieldName}>
-                <Paper variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', fontWeight: 'bold' }}>
-                    {fieldName.replace(/_/g, ' ')}
-                  </Typography>
-                  <Typography variant="body1" sx={{ mt: 0.5, wordBreak: 'break-word' }}>
-                    {fieldData.value || 'N/A'}
-                  </Typography>
-                  {fieldData.confidence && (
-                    <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Confidence:
-                      </Typography>
-                      <Chip
-                        label={`${(fieldData.confidence * 100).toFixed(0)}%`}
-                        size="small"
-                        color={fieldData.confidence >= 0.8 ? 'success' : fieldData.confidence >= 0.5 ? 'warning' : 'default'}
-                        sx={{ height: '20px', fontSize: '0.7rem' }}
-                      />
-                    </Box>
-                  )}
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
+          <ExtractedFieldsDisplay fields={results.extracted_fields} />
         </Paper>
       )}
 
@@ -913,72 +889,33 @@ export default function Results() {
       {/* Info Findings */}
       {infoFindings.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom color="info.main">
+          <Typography variant="h6" gutterBottom color="info.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Info />
             Informational ({infoFindings.length})
           </Typography>
-          <Stack spacing={2}>
-            {infoFindings.map((finding: any, index: number) => (
-              <Box
-                key={index}
-                sx={{
-                  p: 2,
-                  border: '1px solid',
-                  borderColor: 'info.main',
-                  borderRadius: 1,
-                  borderLeft: '4px solid',
-                  borderLeftColor: 'info.main',
-                }}
-              >
-                <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-                  {getSeverityIcon(finding.severity)}
-                  <Chip label={finding.severity} color="info" size="small" />
-                  <Chip label={finding.rule_id} size="small" variant="outlined" />
-                  {finding.document_name && (
-                    <Chip label={finding.document_name} size="small" icon={<Description />} />
-                  )}
-                </Box>
-                <Typography variant="body1" gutterBottom>
-                  {finding.message}
-                </Typography>
-              </Box>
+          <Box>
+            {infoFindings.map((finding: any) => (
+              <ValidationFindingCard key={finding.id} finding={finding} showEvidence={false} />
             ))}
-          </Stack>
+          </Box>
         </Paper>
       )}
 
       {/* Needs Review Findings */}
       {needsReviewFindings.length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom color="info.main">
+          <Typography variant="h6" gutterBottom color="warning.main" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <RateReview />
             Needs Human Review ({needsReviewFindings.length})
           </Typography>
-          <Stack spacing={2}>
-            {needsReviewFindings.map((finding: any, index: number) => (
-              <Box
-                key={index}
-                sx={{
-                  p: 2,
-                  border: '1px solid',
-                  borderColor: 'info.main',
-                  borderRadius: 1,
-                  borderLeft: '4px solid',
-                  borderLeftColor: 'info.main',
-                }}
-              >
-                <Box sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-                  {getSeverityIcon(finding.severity)}
-                  <Chip label={finding.severity} color="info" size="small" />
-                  <Chip label={finding.rule_id} size="small" variant="outlined" />
-                  {finding.document_name && (
-                    <Chip label={finding.document_name} size="small" icon={<Description />} />
-                  )}
-                </Box>
-                <Typography variant="body1" gutterBottom>
-                  {finding.message}
-                </Typography>
-              </Box>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            These items require manual verification. Please review each item and take appropriate action.
+          </Alert>
+          <Box>
+            {needsReviewFindings.map((finding: any) => (
+              <ValidationFindingCard key={finding.id} finding={finding} showEvidence={true} />
             ))}
-          </Stack>
+          </Box>
         </Paper>
       )}
 
