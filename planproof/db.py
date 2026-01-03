@@ -9,7 +9,7 @@ import json
 
 import psycopg
 from psycopg.rows import dict_row
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Enum as SQLEnum
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, JSON, Float, ForeignKey, Boolean, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from geoalchemy2 import Geometry
@@ -109,6 +109,7 @@ class Document(Base):
     artefacts = relationship("Artefact", back_populates="document", cascade="all, delete-orphan")
     validation_results = relationship("ValidationResult", back_populates="document", cascade="all, delete-orphan")
     validation_checks = relationship("ValidationCheck", back_populates="document", cascade="all, delete-orphan")
+    evidence_feedback = relationship("EvidenceFeedback", back_populates="document", cascade="all, delete-orphan")
     run_documents = relationship("RunDocument", back_populates="document", cascade="all, delete-orphan")
     runs = relationship("Run", secondary="run_documents", viewonly=True)
 
@@ -277,6 +278,7 @@ class ValidationCheck(Base):
     submission = relationship("Submission", back_populates="validation_checks")
     document = relationship("Document", back_populates="validation_checks")
     rule = relationship("Rule", back_populates="validation_checks")
+    evidence_feedback = relationship("EvidenceFeedback", back_populates="validation_check", cascade="all, delete-orphan")
 
 
 class Artefact(Base):
@@ -412,6 +414,7 @@ class IssueResolution(Base):
     # Relationships
     run = relationship("Run", back_populates="issue_resolutions")
     actions = relationship("ResolutionAction", back_populates="issue_resolution", cascade="all, delete-orphan")
+    recheck_history = relationship("RecheckHistory", back_populates="issue_resolution")
 
 
 class ReviewDecision(Base):
@@ -429,6 +432,25 @@ class ReviewDecision(Base):
     # Relationships
     validation_check = relationship("ValidationCheck")
     run = relationship("Run")
+
+
+class EvidenceFeedback(Base):
+    """Evidence-level feedback for validation checks."""
+    __tablename__ = "evidence_feedback"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    validation_check_id = Column(Integer, ForeignKey("validation_checks.id"), nullable=False, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    evidence_id = Column(Integer, ForeignKey("evidence.id"), nullable=True, index=True)
+    page_number = Column(Integer, nullable=True)
+    is_relevant = Column(Boolean, nullable=False, default=True)
+    comment = Column(Text, nullable=True)
+    reviewer_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    # Relationships
+    validation_check = relationship("ValidationCheck", back_populates="evidence_feedback")
+    document = relationship("Document", back_populates="evidence_feedback")
 
 
 class ResolutionAction(Base):

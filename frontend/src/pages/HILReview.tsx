@@ -61,6 +61,15 @@ interface ReviewStatus {
   need_info_count: number;
 }
 
+interface LLMCall {
+  timestamp: string;
+  purpose: string;
+  rule_type: string;
+  tokens_used: number;
+  model: string;
+  response_time_ms: number;
+}
+
 const HILReview: React.FC = () => {
   const { applicationId, runId } = useParams<{ applicationId: string; runId: string }>();
   const navigate = useNavigate();
@@ -74,7 +83,9 @@ const HILReview: React.FC = () => {
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus | null>(null);
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [hasReviewPermission, setHasReviewPermission] = useState(true);
-  const [llmCalls, setLlmCalls] = useState<any[]>([]);
+  const [llmCalls, setLlmCalls] = useState<LLMCall[]>([]);
+  const [totalCalls, setTotalCalls] = useState(0);
+  const [totalTokens, setTotalTokens] = useState(0);
 
   useEffect(() => {
     loadReviewData();
@@ -99,8 +110,15 @@ const HILReview: React.FC = () => {
       const status = await api.getReviewStatus(parseInt(runId));
       setReviewStatus(status);
       
-      // Load LLM calls (mock data for now - replace with actual API)
-      setLlmCalls([]);
+      const llmCallData = Array.isArray(results.llm_calls) ? results.llm_calls : [];
+      setLlmCalls(llmCallData);
+      const totals = results.llm_call_totals || {};
+      const computedTokens = llmCallData.reduce(
+        (sum: number, call: LLMCall) => sum + (call.tokens_used || 0),
+        0
+      );
+      setTotalCalls(totals.total_calls ?? llmCallData.length);
+      setTotalTokens(totals.total_tokens ?? computedTokens);
     } catch (err: any) {
       console.error('Failed to load review data:', err);
       setError(getApiErrorMessage(err, 'Failed to load review data'));
@@ -381,13 +399,11 @@ const HILReview: React.FC = () => {
       <Box component="main" sx={{ flexGrow: 1, p: 3 }} id="main-content">
         <Container maxWidth="md">
           {/* LLM Call Tracker */}
-          {llmCalls.length > 0 && (
-            <LLMCallTracker
-              calls={llmCalls}
-              totalTokens={llmCalls.reduce((sum, call) => sum + call.tokens_used, 0)}
-              totalCalls={llmCalls.length}
-            />
-          )}
+          <LLMCallTracker
+            calls={llmCalls}
+            totalTokens={totalTokens}
+            totalCalls={totalCalls}
+          />
           
           {/* Header */}
           <Paper elevation={2} sx={{ p: 3, mb: 3 }}>

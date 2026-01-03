@@ -212,6 +212,21 @@ export const api = {
     return response.data;
   },
 
+  submitEvidenceFeedback: async (
+    runId: number,
+    checkId: number,
+    payload: {
+      document_id: number;
+      page_number?: number;
+      evidence_id?: number;
+      is_relevant: boolean;
+      comment?: string;
+    }
+  ) => {
+    const response = await apiClient.post(`/api/v1/runs/${runId}/findings/${checkId}/evidence-feedback`, payload);
+    return response.data;
+  },
+
   downloadReviewReport: async (runId: number) => {
     const response = await apiClient.get(`/api/v1/runs/${runId}/review-report`, {
       responseType: 'blob',

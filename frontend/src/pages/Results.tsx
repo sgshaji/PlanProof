@@ -20,6 +20,7 @@ import {
   Tooltip,
   Skeleton,
   LinearProgress,
+  TextField,
 } from '@mui/material';
 import {
   RateReview,
@@ -36,7 +37,6 @@ import {
 } from '@mui/icons-material';
 import { api } from '../api/client';
 import { getApiErrorMessage } from '../api/errorUtils';
-import BNGDecision from '../components/BNGDecision';
 import DocumentViewer from '../components/DocumentViewer';
 import LLMTransparency from '../components/LLMTransparency';
 import PriorApprovalDocs from '../components/PriorApprovalDocs';
@@ -54,6 +54,53 @@ export default function Results() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [selectedEvidence, setSelectedEvidence] = useState<any>(null);
+  const [evidenceFeedback, setEvidenceFeedback] = useState<Record<string, { comment: string; isRelevant?: boolean; saving?: boolean }>>({});
+
+  const getEvidenceKey = (findingId: number, evidence: any, index: number) => {
+    if (evidence?.id) {
+      return `evidence-${evidence.id}`;
+    }
+    return `finding-${findingId}-page-${evidence?.page ?? 'unknown'}-${evidence?.evidence_key ?? index}`;
+  };
+
+  const updateEvidenceFeedback = (key: string, updates: { comment?: string; isRelevant?: boolean; saving?: boolean }) => {
+    setEvidenceFeedback((prev) => ({
+      ...prev,
+      [key]: {
+        comment: '',
+        ...prev[key],
+        ...updates,
+      },
+    }));
+  };
+
+  const submitEvidenceFeedback = async (findingId: number, evidence: any, index: number, isRelevant: boolean) => {
+    if (!runId) return;
+    if (!evidence?.document_id) {
+      setError('Evidence is missing document details. Please refresh and try again.');
+      return;
+    }
+
+    const key = getEvidenceKey(findingId, evidence, index);
+    const comment = evidenceFeedback[key]?.comment ?? '';
+
+    updateEvidenceFeedback(key, { saving: true });
+    try {
+      await api.submitEvidenceFeedback(parseInt(runId), findingId, {
+        document_id: evidence.document_id,
+        page_number: evidence.page,
+        evidence_id: evidence.id,
+        is_relevant: isRelevant,
+        comment,
+      });
+      updateEvidenceFeedback(key, { isRelevant, saving: false });
+      setSuccessMessage('Evidence feedback saved.');
+      setTimeout(() => setSuccessMessage(''), 3000);
+    } catch (err: any) {
+      updateEvidenceFeedback(key, { saving: false });
+      setError(getApiErrorMessage(err, 'Failed to save evidence feedback'));
+    }
+  };
 
   const loadResults = async (isBackground = false) => {
     if (!runId) return;
@@ -315,20 +362,6 @@ export default function Results() {
         </Grid>
       </Paper>
 
-      {/* BNG Decision Component */}
-      <BNGDecision
-        runId={parseInt(runId!)}
-        currentBNGStatus={{
-          applicable: results.extracted_fields?.bng_applicable === 'true'
-            ? true
-            : results.extracted_fields?.bng_applicable === 'false'
-            ? false
-            : null,
-          exemptionReason: results.extracted_fields?.bng_exemption_reason,
-        }}
-        onDecisionSubmitted={() => loadResults(true)}
-      />
-
       {/* Prior Approval Documents - Show if any PA rules are in findings */}
       {findings.some((f: any) => f.rule_id?.startsWith('PA-')) && results.submission_id && (
         <Box sx={{ mb: 3 }}>
@@ -438,55 +471,100 @@ export default function Results() {
                     </AccordionSummary>
                     <AccordionDetails>
                       <Stack spacing={1}>
-                        {finding.evidence_details.map((evidence: any, evIndex: number) => (
-                          <Box
-                            key={evIndex}
-                            onClick={() => {
-                              setSelectedDocument({
-                                id: evidence.document_id,
-                                name: evidence.document_name || `Document ${evidence.document_id}`,
-                              });
-                              setSelectedEvidence(evidence);
-                              setViewerOpen(true);
-                            }}
-                            sx={{
-                              p: 1.5,
-                              backgroundColor: 'grey.50',
-                              borderRadius: 1,
-                              border: '1px solid',
-                              borderColor: 'grey.300',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s',
-                              '&:hover': {
-                                backgroundColor: 'primary.50',
-                                borderColor: 'primary.main',
-                                transform: 'translateX(4px)',
-                              },
-                            }}
-                          >
-                            <Typography variant="caption" color="text.secondary">
-                              Page {evidence.page} {evidence.evidence_key && `• ${evidence.evidence_key}`}
-                            </Typography>
-                            <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace' }}>
-                              "{evidence.snippet}"
-                            </Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                              {evidence.confidence && (
+                        {finding.evidence_details.map((evidence: any, evIndex: number) => {
+                          const feedbackKey = getEvidenceKey(finding.id, evidence, evIndex);
+                          const feedbackState = evidenceFeedback[feedbackKey] || { comment: '' };
+                          return (
+                            <Box
+                              key={evIndex}
+                              onClick={() => {
+                                setSelectedDocument({
+                                  id: evidence.document_id,
+                                  name: evidence.document_name || `Document ${evidence.document_id}`,
+                                });
+                                setSelectedEvidence(evidence);
+                                setViewerOpen(true);
+                              }}
+                              sx={{
+                                p: 1.5,
+                                backgroundColor: 'grey.50',
+                                borderRadius: 1,
+                                border: '1px solid',
+                                borderColor: 'grey.300',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                '&:hover': {
+                                  backgroundColor: 'primary.50',
+                                  borderColor: 'primary.main',
+                                  transform: 'translateX(4px)',
+                                },
+                              }}
+                            >
+                              <Typography variant="caption" color="text.secondary">
+                                Page {evidence.page} {evidence.evidence_key && `• ${evidence.evidence_key}`}
+                              </Typography>
+                              <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace' }}>
+                                "{evidence.snippet}"
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                {evidence.confidence && (
+                                  <Chip
+                                    label={`Confidence: ${(evidence.confidence * 100).toFixed(0)}%`}
+                                    size="small"
+                                  />
+                                )}
                                 <Chip
-                                  label={`Confidence: ${(evidence.confidence * 100).toFixed(0)}%`}
+                                  icon={<FindInPage />}
+                                  label="View in document"
                                   size="small"
+                                  color="primary"
+                                  variant="outlined"
                                 />
-                              )}
-                              <Chip
-                                icon={<FindInPage />}
-                                label="View in document"
-                                size="small"
-                                color="primary"
-                                variant="outlined"
-                              />
+                              </Box>
+                              <Box
+                                sx={{ mt: 1.5 }}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <TextField
+                                  label="Evidence comment (optional)"
+                                  size="small"
+                                  fullWidth
+                                  value={feedbackState.comment}
+                                  onChange={(event) => updateEvidenceFeedback(feedbackKey, { comment: event.target.value })}
+                                />
+                                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                                  <Button
+                                    size="small"
+                                    variant={feedbackState.isRelevant === true ? 'contained' : 'outlined'}
+                                    startIcon={<ThumbUp />}
+                                    disabled={feedbackState.saving}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      submitEvidenceFeedback(finding.id, evidence, evIndex, true);
+                                    }}
+                                  >
+                                    Relevant
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    color="warning"
+                                    variant={feedbackState.isRelevant === false ? 'contained' : 'outlined'}
+                                    startIcon={<ThumbDown />}
+                                    disabled={feedbackState.saving}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      submitEvidenceFeedback(finding.id, evidence, evIndex, false);
+                                    }}
+                                  >
+                                    Not relevant
+                                  </Button>
+                                </Stack>
+                              </Box>
                             </Box>
-                          </Box>
-                        ))}
+                          );
+                        })}
                       </Stack>
                     </AccordionDetails>
                   </Accordion>
@@ -499,11 +577,14 @@ export default function Results() {
                       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
                         <Description />
                         <Typography variant="subtitle2">
-                          Scanned Documents ({finding.candidate_documents.length})
+                          Possible Matches ({finding.candidate_documents.length})
                         </Typography>
                       </Box>
                     </AccordionSummary>
                     <AccordionDetails>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                        Use 👍 to confirm a match or 👎 to flag an incorrect document.
+                      </Typography>
                       <Stack spacing={1}>
                         {finding.candidate_documents.map((doc: any, docIndex: number) => (
                           <Box
@@ -626,16 +707,100 @@ export default function Results() {
                     </AccordionSummary>
                     <AccordionDetails>
                       <Stack spacing={1}>
-                        {finding.evidence_details.map((evidence: any, evIndex: number) => (
-                          <Box key={evIndex} sx={{ p: 1.5, backgroundColor: 'grey.50', borderRadius: 1 }}>
-                            <Typography variant="caption" color="text.secondary">
-                              Page {evidence.page}
-                            </Typography>
-                            <Typography variant="body2" sx={{ mt: 0.5 }}>
-                              "{evidence.snippet}"
-                            </Typography>
-                          </Box>
-                        ))}
+                        {finding.evidence_details.map((evidence: any, evIndex: number) => {
+                          const feedbackKey = getEvidenceKey(finding.id, evidence, evIndex);
+                          const feedbackState = evidenceFeedback[feedbackKey] || { comment: '' };
+                          return (
+                            <Box
+                              key={evIndex}
+                              onClick={() => {
+                                setSelectedDocument({
+                                  id: evidence.document_id,
+                                  name: evidence.document_name || `Document ${evidence.document_id}`,
+                                });
+                                setSelectedEvidence(evidence);
+                                setViewerOpen(true);
+                              }}
+                              sx={{
+                                p: 1.5,
+                                backgroundColor: 'grey.50',
+                                borderRadius: 1,
+                                border: '1px solid',
+                                borderColor: 'grey.300',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                '&:hover': {
+                                  backgroundColor: 'primary.50',
+                                  borderColor: 'primary.main',
+                                  transform: 'translateX(4px)',
+                                },
+                              }}
+                            >
+                              <Typography variant="caption" color="text.secondary">
+                                Page {evidence.page} {evidence.evidence_key && `• ${evidence.evidence_key}`}
+                              </Typography>
+                              <Typography variant="body2" sx={{ mt: 0.5, fontFamily: 'monospace' }}>
+                                "{evidence.snippet}"
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                                {evidence.confidence && (
+                                  <Chip
+                                    label={`Confidence: ${(evidence.confidence * 100).toFixed(0)}%`}
+                                    size="small"
+                                  />
+                                )}
+                                <Chip
+                                  icon={<FindInPage />}
+                                  label="View in document"
+                                  size="small"
+                                  color="primary"
+                                  variant="outlined"
+                                />
+                              </Box>
+                              <Box
+                                sx={{ mt: 1.5 }}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                }}
+                              >
+                                <TextField
+                                  label="Evidence comment (optional)"
+                                  size="small"
+                                  fullWidth
+                                  value={feedbackState.comment}
+                                  onChange={(event) => updateEvidenceFeedback(feedbackKey, { comment: event.target.value })}
+                                />
+                                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                                  <Button
+                                    size="small"
+                                    variant={feedbackState.isRelevant === true ? 'contained' : 'outlined'}
+                                    startIcon={<ThumbUp />}
+                                    disabled={feedbackState.saving}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      submitEvidenceFeedback(finding.id, evidence, evIndex, true);
+                                    }}
+                                  >
+                                    Relevant
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    color="warning"
+                                    variant={feedbackState.isRelevant === false ? 'contained' : 'outlined'}
+                                    startIcon={<ThumbDown />}
+                                    disabled={feedbackState.saving}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      submitEvidenceFeedback(finding.id, evidence, evIndex, false);
+                                    }}
+                                  >
+                                    Not relevant
+                                  </Button>
+                                </Stack>
+                              </Box>
+                            </Box>
+                          );
+                        })}
                       </Stack>
                     </AccordionDetails>
                   </Accordion>
@@ -646,10 +811,13 @@ export default function Results() {
                   <Accordion sx={{ mt: 1, backgroundColor: 'rgba(255,255,255,0.7)' }}>
                     <AccordionSummary expandIcon={<ExpandMore />}>
                       <Typography variant="subtitle2">
-                        Scanned Documents ({finding.candidate_documents.length})
+                        Possible Matches ({finding.candidate_documents.length})
                       </Typography>
                     </AccordionSummary>
                     <AccordionDetails>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                        Use 👍 to confirm a match or 👎 to flag an incorrect document.
+                      </Typography>
                       <Stack spacing={1}>
                         {finding.candidate_documents.map((doc: any, docIndex: number) => (
                           <Box

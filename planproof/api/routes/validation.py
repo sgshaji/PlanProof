@@ -3,11 +3,12 @@ Validation Results & Status Endpoints
 """
 
 from typing import List, Optional, Dict, Any, Tuple
+from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from planproof.api.dependencies import get_db, get_current_user, get_storage_client
-from planproof.db import Database, Run, Document, ValidationCheck, Artefact
+from planproof.db import Database, Run, Document, ValidationCheck, Artefact, Submission, ExtractedField
 from planproof.storage import StorageClient
 
 router = APIRouter()
@@ -58,6 +59,28 @@ def _parse_blob_uri(blob_uri: str) -> Optional[Tuple[str, str]]:
     container = parts[1]
     blob_path = parts[2]
     return container, blob_path
+
+
+def _normalize_llm_calls(
+    llm_notes: Dict[str, Any],
+    fallback_timestamp: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    raw_calls = llm_notes.get("llm_calls") or llm_notes.get("llm_call_details") or []
+    if not isinstance(raw_calls, list):
+        return []
+    normalized: List[Dict[str, Any]] = []
+    for call in raw_calls:
+        if not isinstance(call, dict):
+            continue
+        normalized.append({
+            "timestamp": call.get("timestamp") or fallback_timestamp,
+            "purpose": call.get("purpose") or "LLM call",
+            "rule_type": call.get("rule_type") or "unknown",
+            "tokens_used": int(call.get("tokens_used") or 0),
+            "model": call.get("model") or "unknown",
+            "response_time_ms": int(call.get("response_time_ms") or 0)
+        })
+    return normalized
 
 
 def _normalize_status(status: str) -> str:
@@ -136,6 +159,26 @@ def _load_extraction_fields(
                 "document_name": doc.filename,
             }
     return fields_map
+
+
+def _serialize_document(document: Document) -> Dict[str, Any]:
+    return {
+        "id": document.id,
+        "filename": document.filename,
+        "content_hash": document.content_hash,
+        "document_type": document.document_type,
+    }
+
+
+def _document_signature(document: Document) -> Tuple[str, str, str]:
+    filename = (document.filename or "").strip().lower()
+    content_hash = (document.content_hash or "").strip().lower()
+    document_type = (document.document_type or "").strip().lower()
+    return filename, content_hash, document_type
+
+
+def _document_name_key(document: Document) -> str:
+    return (document.filename or "").strip().lower()
 
 
 @router.get("/applications/{application_ref}/status")
@@ -324,6 +367,7 @@ async def get_validation_results(
 async def get_run_results(
     run_id: int,
     db: Database = Depends(get_db),
+    storage: StorageClient = Depends(get_storage_client),
     user: dict = Depends(get_current_user)
 ):
     """
@@ -393,8 +437,13 @@ async def get_run_results(
                     Evidence.id.in_(check.evidence_ids)
                 ).all()
                 for ev in evidences:
+                    document_name = None
+                    if ev.document_id in document_lookup:
+                        document_name = document_lookup[ev.document_id].filename
                     evidence_list.append({
                         "id": ev.id,
+                        "document_id": ev.document_id,
+                        "document_name": document_name,
                         "page": ev.page_number,
                         "snippet": ev.snippet[:200] if ev.snippet else "",
                         "evidence_key": ev.evidence_key,
@@ -402,6 +451,21 @@ async def get_run_results(
                         "bbox": ev.bbox
                     })
             
+            evidence_details = check.evidence_details or evidence_list
+            if evidence_details:
+                formatted_details = []
+                for detail in evidence_details:
+                    detail_doc_id = detail.get("document_id") or check.document_id
+                    detail_doc_name = detail.get("document_name")
+                    if detail_doc_id in document_lookup and not detail_doc_name:
+                        detail_doc_name = document_lookup[detail_doc_id].filename
+                    formatted_details.append({
+                        **detail,
+                        "document_id": detail_doc_id,
+                        "document_name": detail_doc_name
+                    })
+                evidence_details = formatted_details
+
             findings.append({
                 "id": check.id,
                 "rule_id": check.rule_id_string or str(check.rule_id),
@@ -410,7 +474,7 @@ async def get_run_results(
                 "severity": severity or "info",
                 "message": check.explanation or "",
                 "evidence": check.evidence_ids or [],
-                "evidence_details": check.evidence_details or evidence_list,
+                "evidence_details": evidence_details,
                 "candidate_documents": check.candidate_documents or [],
                 "details": check.rule.rule_config if check.rule and check.rule.rule_config else None,
                 "document_name": document_lookup.get(check.document_id).filename if check.document_id in document_lookup else None
@@ -439,12 +503,56 @@ async def get_run_results(
         
         # Count LLM calls from artefacts
         llm_count = 0
+        llm_calls: List[Dict[str, Any]] = []
         if document_ids:
-            llm_count = session.query(Artefact).filter(
+            llm_artefacts = session.query(Artefact).filter(
                 Artefact.document_id.in_(document_ids),
                 Artefact.artefact_type == "llm_notes"
-            ).count()
+            ).order_by(Artefact.created_at.asc()).all()
+            llm_count = len(llm_artefacts)
+            for artefact in llm_artefacts:
+                parsed = _parse_blob_uri(artefact.blob_uri)
+                if not parsed:
+                    continue
+                container, blob_path = parsed
+                try:
+                    llm_notes = storage.read_json_blob(container, blob_path)
+                except Exception:
+                    continue
+                llm_calls.extend(
+                    _normalize_llm_calls(
+                        llm_notes,
+                        fallback_timestamp=artefact.created_at.isoformat() if artefact.created_at else None
+                    )
+                )
+        total_tokens = sum(call.get("tokens_used", 0) for call in llm_calls)
+        total_calls = len(llm_calls) if llm_calls else llm_count
         
+        submission_id = None
+        submission_fields: Dict[str, Optional[str]] = {}
+        if run.application_id:
+            latest_submission = session.query(Submission).filter(
+                Submission.planning_case_id == run.application_id
+            ).order_by(Submission.created_at.desc()).first()
+
+            if latest_submission:
+                submission_id = latest_submission.id
+
+                def _get_submission_field(field_name: str) -> Optional[str]:
+                    field = session.query(ExtractedField).filter(
+                        ExtractedField.submission_id == latest_submission.id,
+                        ExtractedField.field_name == field_name
+                    ).order_by(
+                        ExtractedField.confidence.desc().nullslast(),
+                        ExtractedField.created_at.desc()
+                    ).first()
+                    return field.field_value if field else None
+
+                submission_fields = {
+                    "bng_applicable": _get_submission_field("bng_applicable"),
+                    "bng_exemption_reason": _get_submission_field("bng_exemption_reason")
+                }
+
         # Build response with correct structure
         response_summary = {
             "total_documents": len(document_ids),
@@ -459,10 +567,17 @@ async def get_run_results(
         return {
             "run_id": run.id,
             "status": run.status,
+            "submission_id": submission_id,
+            "submission_fields": submission_fields,
             "summary": response_summary,
             "documents": document_entries,
             "findings": findings,
             "llm_calls_per_run": llm_count,
+            "llm_calls": llm_calls,
+            "llm_call_totals": {
+                "total_calls": total_calls,
+                "total_tokens": total_tokens
+            },
             "extracted_fields": extracted_fields,
             "document_names": [doc.filename for doc in documents],
             "completed_at": run.completed_at.isoformat() if run.completed_at else None
@@ -543,6 +658,52 @@ async def compare_runs(
         fields_a = _load_extraction_fields(session, storage, documents_a)
         fields_b = _load_extraction_fields(session, storage, documents_b)
 
+        documents_a_by_signature: Dict[Tuple[str, str, str], List[Document]] = defaultdict(list)
+        documents_b_by_signature: Dict[Tuple[str, str, str], List[Document]] = defaultdict(list)
+        documents_a_by_name: Dict[str, List[Document]] = defaultdict(list)
+        documents_b_by_name: Dict[str, List[Document]] = defaultdict(list)
+
+        for doc in documents_a:
+            documents_a_by_signature[_document_signature(doc)].append(doc)
+            documents_a_by_name[_document_name_key(doc)].append(doc)
+
+        for doc in documents_b:
+            documents_b_by_signature[_document_signature(doc)].append(doc)
+            documents_b_by_name[_document_name_key(doc)].append(doc)
+
+        added_documents: List[Dict[str, Any]] = []
+        removed_documents: List[Dict[str, Any]] = []
+        changed_documents: List[Dict[str, Any]] = []
+
+        for signature, docs in documents_b_by_signature.items():
+            extra_docs = docs[len(documents_a_by_signature.get(signature, [])):]
+            for doc in extra_docs:
+                added_documents.append(_serialize_document(doc))
+
+        for signature, docs in documents_a_by_signature.items():
+            extra_docs = docs[len(documents_b_by_signature.get(signature, [])):]
+            for doc in extra_docs:
+                removed_documents.append(_serialize_document(doc))
+
+        for filename in sorted(set(documents_a_by_name.keys()) & set(documents_b_by_name.keys())):
+            docs_a = documents_a_by_name[filename]
+            docs_b = documents_b_by_name[filename]
+            hashes_a = sorted({doc.content_hash for doc in docs_a if doc.content_hash})
+            hashes_b = sorted({doc.content_hash for doc in docs_b if doc.content_hash})
+            types_a = sorted({doc.document_type for doc in docs_a if doc.document_type})
+            types_b = sorted({doc.document_type for doc in docs_b if doc.document_type})
+
+            if hashes_a != hashes_b or types_a != types_b:
+                changed_documents.append({
+                    "filename": docs_b[0].filename if docs_b else docs_a[0].filename,
+                    "old_content_hashes": hashes_a,
+                    "new_content_hashes": hashes_b,
+                    "old_document_types": types_a,
+                    "new_document_types": types_b,
+                    "old_document_ids": [doc.id for doc in docs_a],
+                    "new_document_ids": [doc.id for doc in docs_b],
+                })
+
         added_fields = []
         removed_fields = []
         changed_fields = []
@@ -594,6 +755,11 @@ async def compare_runs(
                 "new_issues": new_issues,
                 "resolved_issues": resolved_issues,
                 "status_changes": status_changes,
+            },
+            "documents": {
+                "added_documents": added_documents,
+                "removed_documents": removed_documents,
+                "changed_documents": changed_documents,
             },
             "extracted_fields": {
                 "added": added_fields,
