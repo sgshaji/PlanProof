@@ -157,3 +157,4 @@ credentials.json
 # Backup files
 *.backup
 *.old
+backend/.env
