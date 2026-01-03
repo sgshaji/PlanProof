@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from planproof.api.dependencies import get_db, require_officer
-from planproof.db import Database, Run, ValidationCheck, ReviewDecision
+from planproof.db import Database, Run, ValidationCheck, ReviewDecision, EvidenceFeedback, Evidence, Document
 from planproof.db import utcnow
 from planproof.services.review_report_service import generate_review_report_pdf
 
@@ -36,6 +36,25 @@ class ReviewDecisionResponse(BaseModel):
     review_id: int
     validation_check_id: int
     decision: str
+    reviewed_at: str
+    message: str
+
+
+class EvidenceFeedbackRequest(BaseModel):
+    """Request to submit evidence feedback."""
+    document_id: int
+    page_number: Optional[int] = None
+    evidence_id: Optional[int] = None
+    is_relevant: bool
+    comment: Optional[str] = None
+
+
+class EvidenceFeedbackResponse(BaseModel):
+    """Response after submitting evidence feedback."""
+    feedback_id: int
+    validation_check_id: int
+    document_id: int
+    is_relevant: bool
     reviewed_at: str
     message: str
 
@@ -134,6 +153,110 @@ async def submit_review_decision(
             decision=request.decision,
             reviewed_at=datetime.utcnow().isoformat(),
             message="Review decision saved successfully"
+        )
+    finally:
+        session.close()
+
+
+@router.post("/runs/{run_id}/findings/{check_id}/evidence-feedback")
+async def submit_evidence_feedback(
+    run_id: int,
+    check_id: int,
+    request: EvidenceFeedbackRequest,
+    db: Database = Depends(get_db),
+    user: dict = Depends(require_officer)
+) -> EvidenceFeedbackResponse:
+    """
+    Submit evidence-level feedback for a validation check.
+
+    **Path Parameters:**
+    - run_id: Run ID
+    - check_id: ValidationCheck ID
+    """
+    session = db.get_session()
+    try:
+        if not check_review_permission(user):
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to submit evidence feedback"
+            )
+
+        run = session.query(Run).filter(Run.id == run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
+        check = session.query(ValidationCheck).filter(
+            ValidationCheck.id == check_id
+        ).first()
+        if not check:
+            raise HTTPException(status_code=404, detail="Validation check not found")
+
+        document = session.query(Document).filter(Document.id == request.document_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        document_ids = [doc.id for doc in run.documents] if run.documents else []
+        if not document_ids and run.document_id:
+            document_ids = [run.document_id]
+        if document_ids and request.document_id not in document_ids:
+            raise HTTPException(status_code=400, detail="Document is not associated with this run")
+        if check.document_id and check.document_id != request.document_id:
+            raise HTTPException(status_code=400, detail="Document does not match validation check")
+
+        page_number = request.page_number
+        evidence_id = request.evidence_id
+        if request.evidence_id is not None:
+            evidence = session.query(Evidence).filter(Evidence.id == request.evidence_id).first()
+            if not evidence:
+                raise HTTPException(status_code=404, detail="Evidence not found")
+            if evidence.document_id != request.document_id:
+                raise HTTPException(status_code=400, detail="Evidence does not match document")
+            evidence_id = evidence.id
+            if page_number is None:
+                page_number = evidence.page_number
+
+        existing = None
+        if evidence_id is not None:
+            existing = session.query(EvidenceFeedback).filter(
+                EvidenceFeedback.validation_check_id == check_id,
+                EvidenceFeedback.evidence_id == evidence_id
+            ).first()
+        elif page_number is not None:
+            existing = session.query(EvidenceFeedback).filter(
+                EvidenceFeedback.validation_check_id == check_id,
+                EvidenceFeedback.document_id == request.document_id,
+                EvidenceFeedback.page_number == page_number
+            ).first()
+
+        if existing:
+            existing.is_relevant = request.is_relevant
+            existing.comment = request.comment
+            existing.reviewer_id = user.get("user_id", "unknown")
+            session.commit()
+            feedback_id = existing.id
+        else:
+            feedback = EvidenceFeedback(
+                validation_check_id=check_id,
+                document_id=request.document_id,
+                evidence_id=evidence_id,
+                page_number=page_number,
+                is_relevant=request.is_relevant,
+                comment=request.comment,
+                reviewer_id=user.get("user_id", "unknown"),
+                created_at=utcnow()
+            )
+            session.add(feedback)
+            session.commit()
+            session.refresh(feedback)
+            feedback_id = feedback.id
+
+        return EvidenceFeedbackResponse(
+            feedback_id=feedback_id,
+            validation_check_id=check_id,
+            document_id=request.document_id,
+            is_relevant=request.is_relevant,
+            reviewed_at=datetime.utcnow().isoformat(),
+            message="Evidence feedback saved successfully"
         )
     finally:
         session.close()

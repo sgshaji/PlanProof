@@ -393,8 +393,13 @@ async def get_run_results(
                     Evidence.id.in_(check.evidence_ids)
                 ).all()
                 for ev in evidences:
+                    document_name = None
+                    if ev.document_id in document_lookup:
+                        document_name = document_lookup[ev.document_id].filename
                     evidence_list.append({
                         "id": ev.id,
+                        "document_id": ev.document_id,
+                        "document_name": document_name,
                         "page": ev.page_number,
                         "snippet": ev.snippet[:200] if ev.snippet else "",
                         "evidence_key": ev.evidence_key,
@@ -402,6 +407,21 @@ async def get_run_results(
                         "bbox": ev.bbox
                     })
             
+            evidence_details = check.evidence_details or evidence_list
+            if evidence_details:
+                formatted_details = []
+                for detail in evidence_details:
+                    detail_doc_id = detail.get("document_id") or check.document_id
+                    detail_doc_name = detail.get("document_name")
+                    if detail_doc_id in document_lookup and not detail_doc_name:
+                        detail_doc_name = document_lookup[detail_doc_id].filename
+                    formatted_details.append({
+                        **detail,
+                        "document_id": detail_doc_id,
+                        "document_name": detail_doc_name
+                    })
+                evidence_details = formatted_details
+
             findings.append({
                 "id": check.id,
                 "rule_id": check.rule_id_string or str(check.rule_id),
@@ -410,7 +430,7 @@ async def get_run_results(
                 "severity": severity or "info",
                 "message": check.explanation or "",
                 "evidence": check.evidence_ids or [],
-                "evidence_details": check.evidence_details or evidence_list,
+                "evidence_details": evidence_details,
                 "candidate_documents": check.candidate_documents or [],
                 "details": check.rule.rule_config if check.rule and check.rule.rule_config else None,
                 "document_name": document_lookup.get(check.document_id).filename if check.document_id in document_lookup else None
