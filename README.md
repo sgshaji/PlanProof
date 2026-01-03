@@ -23,7 +23,7 @@ PlanProof is an intelligent validation system for UK planning applications that 
 - **30+ Validation Rules**: Comprehensive validation across 11 categories (Field Requirements, Document Requirements, Consistency, Fees, Ownership, Prior Approval, Constraints, BNG, Plan Quality, Modifications, Spatial)
 - **Natural Language Findings**: User-friendly validation results categorized by topic, not technical severity
 - **Document Intelligence**: Identifies missing documents and suggests alternatives from submission packages
-- **Officer-Friendly UX**: Modern React interface designed specifically for planning officers
+- **Officer-Friendly UX(for testing only)**: Modern React interface designed specifically for planning officers
 - **Evidence-Based Validation**: All findings link to specific documents and page numbers
 - **Delta Tracking**: Monitors changes across application versions
 - **Parent Discovery**: Automatic identification of related planning applications
