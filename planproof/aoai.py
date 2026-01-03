@@ -4,6 +4,8 @@ Azure OpenAI wrapper for LLM-based resolution and validation.
 
 from typing import List, Dict, Any, Optional
 import logging
+import time
+from datetime import datetime, timezone
 
 import openai
 from openai import APIError, APITimeoutError, RateLimitError, APIConnectionError
@@ -51,6 +53,8 @@ class AzureOpenAIClient:
         self.deployment = deployment
         self.timeout = timeout or 60.0
         self._call_count = 0  # Track LLM calls for metrics
+        self._last_call_metadata: Optional[Dict[str, Any]] = None
+        self._call_history: List[Dict[str, Any]] = []
 
         # Cost tracking
         self.total_tokens = 0
@@ -82,6 +86,8 @@ class AzureOpenAIClient:
             RuntimeError: If API call fails after retries or times out
         """
         self._call_count += 1
+        call_started_at = time.monotonic()
+        call_timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
             response = self.client.chat.completions.create(
@@ -93,8 +99,10 @@ class AzureOpenAIClient:
             )
 
             # Track tokens and cost
+            response_time_ms = int((time.monotonic() - call_started_at) * 1000)
+            tokens_used = 0
             if hasattr(response, 'usage') and response.usage:
-                tokens_used = response.usage.total_tokens
+                tokens_used = response.usage.total_tokens or 0
                 cost = (tokens_used / 1000) * self.cost_per_1k_tokens
 
                 self.total_tokens += tokens_used
@@ -111,6 +119,15 @@ class AzureOpenAIClient:
                         f"⚠️  LLM cost exceeded ${self.total_cost:.2f}! "
                         f"Consider reducing calls or checking for runaway usage."
                     )
+
+            call_metadata = {
+                "timestamp": call_timestamp,
+                "tokens_used": tokens_used,
+                "model": getattr(response, "model", None) or self.deployment,
+                "response_time_ms": response_time_ms,
+            }
+            self._last_call_metadata = call_metadata
+            self._call_history.append(call_metadata)
 
             return response
 
@@ -144,6 +161,16 @@ class AzureOpenAIClient:
         self._call_count = 0
         self.total_tokens = 0
         self.total_cost = 0.0
+        self._last_call_metadata = None
+        self._call_history = []
+
+    def get_last_call_metadata(self) -> Optional[Dict[str, Any]]:
+        """Get metadata for the most recent LLM call."""
+        return self._last_call_metadata
+
+    def get_call_history(self) -> List[Dict[str, Any]]:
+        """Get metadata for all LLM calls on this client."""
+        return list(self._call_history)
 
     def get_cost_summary(self) -> Dict[str, Any]:
         """
@@ -342,3 +369,43 @@ Be precise and only extract information that is clearly present in the evidence 
                 "error": "LLM response could not be parsed as JSON",
                 "raw_response": content
             }
+
+    def chat_json_with_metadata(self, payload: dict) -> Dict[str, Any]:
+        """
+        Call AOAI with a JSON-structured prompt and return parsed JSON with metadata.
+
+        Args:
+            payload: Dictionary containing the task/request to send to LLM
+
+        Returns:
+            Dictionary with parsed response data and call metadata.
+        """
+        system_prompt = """You are a planning validation assistant. Analyze the provided task and return a valid JSON response following the specified schema.
+
+Be precise and only extract information that is clearly present in the evidence provided."""
+
+        import json as jsonlib
+        user_prompt = jsonlib.dumps(payload, indent=2)
+
+        response = self.chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+        try:
+            parsed = jsonlib.loads(content)
+        except jsonlib.JSONDecodeError:
+            parsed = {
+                "error": "LLM response could not be parsed as JSON",
+                "raw_response": content
+            }
+
+        return {
+            "data": parsed,
+            "metadata": self.get_last_call_metadata()
+        }

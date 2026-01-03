@@ -425,11 +425,23 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
 
     try:
         prompt_obj = build_llm_prompt(extraction, validation)
-        resp = aoai_client.chat_json(prompt_obj)  # returns parsed JSON dict
+        response_payload = aoai_client.chat_json_with_metadata(prompt_obj)
+        resp = response_payload.get("data", {})
+        call_metadata = response_payload.get("metadata") or {}
 
         # Get call count after the LLM call
         call_count_after = aoai_client.get_call_count()
         llm_calls_made = call_count_after - call_count_before
+        llm_call_details = []
+        if call_metadata:
+            llm_call_details.append({
+                "timestamp": call_metadata.get("timestamp"),
+                "purpose": "Resolve missing fields",
+                "rule_type": "llm_gate",
+                "tokens_used": call_metadata.get("tokens_used", 0),
+                "model": call_metadata.get("model"),
+                "response_time_ms": call_metadata.get("response_time_ms", 0)
+            })
 
         return {
             "triggered": True,
@@ -441,6 +453,7 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
             "request": prompt_obj,
             "response": resp,
             "llm_call_count": llm_calls_made,
+            "llm_calls": llm_call_details,
             "status": "success"
         }
 
@@ -464,6 +477,7 @@ def resolve_with_llm_new(extraction: Dict[str, Any], validation: Dict[str, Any],
                 "error": str(e)
             },
             "llm_call_count": 0,
+            "llm_calls": [],
             "status": "failed",
             "error_details": {
                 "error_type": type(e).__name__,
