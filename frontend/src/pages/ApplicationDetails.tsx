@@ -157,9 +157,16 @@ const ApplicationDetails: React.FC = () => {
   }, [applicationId]);
 
   useEffect(() => {
-    if (appData?.run_history.length && appData.run_history.length >= 2) {
-      setCompareRunIdB(appData.run_history[0].id);
-      setCompareRunIdA(appData.run_history[1].id);
+    if (appData?.run_history) {
+      // Only select runs that have documents for comparison
+      const comparableRuns = appData.run_history.filter((r: any) => r.has_documents);
+      if (comparableRuns.length >= 2) {
+        setCompareRunIdB(comparableRuns[0].id);
+        setCompareRunIdA(comparableRuns[1].id);
+      } else if (comparableRuns.length === 1) {
+        setCompareRunIdB(comparableRuns[0].id);
+        setCompareRunIdA('');
+      }
     }
   }, [appData]);
 
@@ -558,6 +565,13 @@ const ApplicationDetails: React.FC = () => {
         <DialogTitle>Compare Runs</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
+            {/* Info about comparable runs */}
+            {appData.run_history.filter((r: any) => r.has_documents).length < 2 && (
+              <Alert severity="warning">
+                At least 2 runs with documents are needed to compare. 
+                Only runs with documents can be compared.
+              </Alert>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <FormControl fullWidth>
                 <InputLabel id="compare-run-a-label">Base Run</InputLabel>
@@ -567,7 +581,9 @@ const ApplicationDetails: React.FC = () => {
                   label="Base Run"
                   onChange={(event) => setCompareRunIdA(event.target.value as number)}
                 >
-                  {appData.run_history.map((run) => (
+                  {appData.run_history
+                    .filter((run: any) => run.has_documents)
+                    .map((run: any) => (
                     <MenuItem key={run.id} value={run.id}>
                       Run #{run.id} • {new Date(run.created_at).toLocaleDateString('en-GB')}
                     </MenuItem>
@@ -582,7 +598,9 @@ const ApplicationDetails: React.FC = () => {
                   label="Comparison Run"
                   onChange={(event) => setCompareRunIdB(event.target.value as number)}
                 >
-                  {appData.run_history.map((run) => (
+                  {appData.run_history
+                    .filter((run: any) => run.has_documents)
+                    .map((run: any) => (
                     <MenuItem key={run.id} value={run.id}>
                       Run #{run.id} • {new Date(run.created_at).toLocaleDateString('en-GB')}
                     </MenuItem>
@@ -601,196 +619,252 @@ const ApplicationDetails: React.FC = () => {
 
             {comparison && !compareLoading && (
               <Stack spacing={3}>
-                <Box>
-                  <Typography variant="subtitle1" gutterBottom>
-                    Findings Changes
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    New issues: {comparison.findings.new_issues.length} • Resolved issues: {comparison.findings.resolved_issues.length} • Status changes: {comparison.findings.status_changes.length}
-                  </Typography>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="subtitle2">New Issues</Typography>
-                      {comparison.findings.new_issues.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No new issues.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.findings.new_issues.map((item) => (
-                            <ListItem key={`new-${item.rule_id}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.title} • ${item.status.toUpperCase()}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Resolved Issues</Typography>
-                      {comparison.findings.resolved_issues.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No resolved issues.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.findings.resolved_issues.map((item) => (
-                            <ListItem key={`resolved-${item.rule_id}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.title} • ${item.status.toUpperCase()}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Status Changes</Typography>
-                      {comparison.findings.status_changes.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No status changes.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.findings.status_changes.map((item) => (
-                            <ListItem key={`change-${item.rule_id}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.title} • ${item.from_status} → ${item.to_status}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                  </Stack>
+                {/* Summary Cards */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'error.50', border: '1px solid', borderColor: 'error.200' }}>
+                    <Typography variant="h4" color="error.main" fontWeight="bold">
+                      {comparison.findings.new_issues.length}
+                    </Typography>
+                    <Typography variant="body2" color="error.dark">New Issues</Typography>
+                  </Paper>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.50', border: '1px solid', borderColor: 'success.200' }}>
+                    <Typography variant="h4" color="success.main" fontWeight="bold">
+                      {comparison.findings.resolved_issues.length}
+                    </Typography>
+                    <Typography variant="body2" color="success.dark">Resolved</Typography>
+                  </Paper>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'info.50', border: '1px solid', borderColor: 'info.200' }}>
+                    <Typography variant="h4" color="info.main" fontWeight="bold">
+                      {comparison.documents.added_documents.length + comparison.documents.removed_documents.length}
+                    </Typography>
+                    <Typography variant="body2" color="info.dark">Doc Changes</Typography>
+                  </Paper>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.50', border: '1px solid', borderColor: 'warning.200' }}>
+                    <Typography variant="h4" color="warning.main" fontWeight="bold">
+                      {comparison.extracted_fields.added.length + comparison.extracted_fields.removed.length + comparison.extracted_fields.changed.length}
+                    </Typography>
+                    <Typography variant="body2" color="warning.dark">Field Changes</Typography>
+                  </Paper>
                 </Box>
 
-                <Box>
-                  <Typography variant="subtitle1" gutterBottom>
-                    Document Changes
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Added: {comparison.documents.added_documents.length} • Removed: {comparison.documents.removed_documents.length} • Updated: {comparison.documents.changed_documents.length}
-                  </Typography>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="subtitle2">Added Documents</Typography>
-                      {comparison.documents.added_documents.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No added documents.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.documents.added_documents.map((doc) => (
-                            <ListItem key={`doc-added-${doc.id}`}>
-                              <ListItemText
-                                primary={doc.filename}
-                                secondary={formatDocumentMeta(doc)}
-                              />
-                            </ListItem>
+                {/* Findings Section */}
+                {(comparison.findings.new_issues.length > 0 || comparison.findings.resolved_issues.length > 0 || comparison.findings.status_changes.length > 0) && (
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      🔍 Validation Findings
+                    </Typography>
+                    
+                    {comparison.findings.new_issues.length > 0 && (
+                      <Box sx={{ mb: 2 }}>
+                        <Chip label="New Issues" color="error" size="small" sx={{ mb: 1 }} />
+                        <Stack spacing={1}>
+                          {comparison.findings.new_issues.map((item, idx) => (
+                            <Paper key={idx} variant="outlined" sx={{ p: 1.5, bgcolor: 'error.50', borderColor: 'error.200' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Chip label={item.rule_id || item.title} size="small" />
+                                <Chip label={item.status} size="small" color="error" variant="outlined" />
+                              </Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                                {item.document_name || 'Unknown document'}
+                              </Typography>
+                            </Paper>
                           ))}
-                        </List>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Removed Documents</Typography>
-                      {comparison.documents.removed_documents.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No removed documents.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.documents.removed_documents.map((doc) => (
-                            <ListItem key={`doc-removed-${doc.id}`}>
-                              <ListItemText
-                                primary={doc.filename}
-                                secondary={formatDocumentMeta(doc)}
-                              />
-                            </ListItem>
+                        </Stack>
+                      </Box>
+                    )}
+                    
+                    {comparison.findings.resolved_issues.length > 0 && (
+                      <Box sx={{ mb: 2 }}>
+                        <Chip label="Resolved" color="success" size="small" sx={{ mb: 1 }} />
+                        <Stack spacing={1}>
+                          {comparison.findings.resolved_issues.map((item, idx) => (
+                            <Paper key={idx} variant="outlined" sx={{ p: 1.5, bgcolor: 'success.50', borderColor: 'success.200' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Chip label={item.rule_id || item.title} size="small" />
+                                <Typography variant="body2" color="success.dark">✓ Fixed</Typography>
+                              </Box>
+                              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                                {item.document_name || 'Unknown document'}
+                              </Typography>
+                            </Paper>
                           ))}
-                        </List>
-                      )}
-                    </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Updated Documents</Typography>
-                      {comparison.documents.changed_documents.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No updated documents.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.documents.changed_documents.map((doc) => (
-                            <ListItem key={`doc-changed-${doc.filename}`}>
-                              <ListItemText
-                                primary={doc.filename}
-                                secondary={
-                                  [
-                                    formatDocumentChangeDetail('Type', doc.old_document_types, doc.new_document_types),
-                                    formatDocumentChangeDetail('Hash', doc.old_content_hashes, doc.new_content_hashes),
-                                  ].join(' • ')
-                                }
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                  </Stack>
-                </Box>
+                        </Stack>
+                      </Box>
+                    )}
 
-                <Box>
-                  <Typography variant="subtitle1" gutterBottom>
-                    Extracted Field Changes
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Added: {comparison.extracted_fields.added.length} • Removed: {comparison.extracted_fields.removed.length} • Updated: {comparison.extracted_fields.changed.length}
-                  </Typography>
-                  <Stack spacing={2}>
-                    <Box>
-                      <Typography variant="subtitle2">Added Fields</Typography>
-                      {comparison.extracted_fields.added.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No added fields.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.extracted_fields.added.map((item) => (
-                            <ListItem key={`added-${item.field}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.field}: ${item.value}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
+                    {comparison.findings.status_changes.length > 0 && (
+                      <Box>
+                        <Chip label="Status Changes" color="warning" size="small" sx={{ mb: 1 }} />
+                        <Stack spacing={1}>
+                          {comparison.findings.status_changes.map((item, idx) => (
+                            <Paper key={idx} variant="outlined" sx={{ p: 1.5, bgcolor: 'warning.50', borderColor: 'warning.200' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Chip label={item.rule_id || item.title} size="small" />
+                                <Chip label={item.from_status} size="small" variant="outlined" />
+                                <Typography variant="body2">→</Typography>
+                                <Chip label={item.to_status} size="small" color="primary" />
+                              </Box>
+                            </Paper>
                           ))}
-                        </List>
+                        </Stack>
+                      </Box>
+                    )}
+                  </Paper>
+                )}
+
+                {/* Documents Section */}
+                {(comparison.documents.added_documents.length > 0 || comparison.documents.removed_documents.length > 0) && (
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      📄 Document Changes
+                    </Typography>
+                    
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                      {comparison.documents.added_documents.length > 0 && (
+                        <Box>
+                          <Chip label={`${comparison.documents.added_documents.length} Added`} color="success" size="small" sx={{ mb: 1 }} />
+                          <Stack spacing={1}>
+                            {comparison.documents.added_documents.map((doc, idx) => (
+                              <Paper key={idx} variant="outlined" sx={{ p: 1.5, bgcolor: 'success.50' }}>
+                                <Typography variant="body2" fontWeight="medium" noWrap>
+                                  {doc.filename?.slice(0, 40)}{doc.filename?.length > 40 ? '...' : ''}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {doc.document_type || 'Unknown type'}
+                                </Typography>
+                              </Paper>
+                            ))}
+                          </Stack>
+                        </Box>
+                      )}
+                      
+                      {comparison.documents.removed_documents.length > 0 && (
+                        <Box>
+                          <Chip label={`${comparison.documents.removed_documents.length} Removed`} color="error" size="small" sx={{ mb: 1 }} />
+                          <Stack spacing={1}>
+                            {comparison.documents.removed_documents.map((doc, idx) => (
+                              <Paper key={idx} variant="outlined" sx={{ p: 1.5, bgcolor: 'error.50' }}>
+                                <Typography variant="body2" fontWeight="medium" noWrap sx={{ textDecoration: 'line-through' }}>
+                                  {doc.filename?.slice(0, 40)}{doc.filename?.length > 40 ? '...' : ''}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  {doc.document_type || 'Unknown type'}
+                                </Typography>
+                              </Paper>
+                            ))}
+                          </Stack>
+                        </Box>
                       )}
                     </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Removed Fields</Typography>
-                      {comparison.extracted_fields.removed.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No removed fields.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.extracted_fields.removed.map((item) => (
-                            <ListItem key={`removed-${item.field}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.field}: ${item.value}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
+                  </Paper>
+                )}
+
+                {/* Extracted Fields Section */}
+                {(comparison.extracted_fields.added.length > 0 || comparison.extracted_fields.removed.length > 0 || comparison.extracted_fields.changed.length > 0) && (
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      📝 Extracted Data Changes
+                    </Typography>
+                    
+                    {comparison.extracted_fields.changed.length > 0 && (
+                      <Box sx={{ mb: 2 }}>
+                        <Chip label={`${comparison.extracted_fields.changed.length} Updated`} color="primary" size="small" sx={{ mb: 1 }} />
+                        <TableContainer component={Paper} variant="outlined">
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                                <TableCell><strong>Field</strong></TableCell>
+                                <TableCell><strong>Old Value</strong></TableCell>
+                                <TableCell><strong>New Value</strong></TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {comparison.extracted_fields.changed.slice(0, 10).map((item, idx) => (
+                                <TableRow key={idx}>
+                                  <TableCell>
+                                    <Typography variant="body2" fontWeight="medium">{item.field}</Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2" color="error.main" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {String(item.old_value).slice(0, 50)}{String(item.old_value).length > 50 ? '...' : ''}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2" color="success.main" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                      {String(item.new_value).slice(0, 50)}{String(item.new_value).length > 50 ? '...' : ''}
+                                    </Typography>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                        {comparison.extracted_fields.changed.length > 10 && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                            +{comparison.extracted_fields.changed.length - 10} more changes...
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2 }}>
+                      {comparison.extracted_fields.added.length > 0 && (
+                        <Box>
+                          <Chip label={`${comparison.extracted_fields.added.length} New Fields`} color="success" size="small" sx={{ mb: 1 }} />
+                          <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'success.50', maxHeight: 200, overflow: 'auto' }}>
+                            {comparison.extracted_fields.added.slice(0, 8).map((item, idx) => (
+                              <Box key={idx} sx={{ mb: 1, pb: 1, borderBottom: idx < 7 ? '1px solid' : 'none', borderColor: 'divider' }}>
+                                <Typography variant="body2" fontWeight="medium">{item.field}</Typography>
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                  {String(item.value).slice(0, 60)}{String(item.value).length > 60 ? '...' : ''}
+                                </Typography>
+                              </Box>
+                            ))}
+                            {comparison.extracted_fields.added.length > 8 && (
+                              <Typography variant="caption" color="text.secondary">
+                                +{comparison.extracted_fields.added.length - 8} more...
+                              </Typography>
+                            )}
+                          </Paper>
+                        </Box>
+                      )}
+                      
+                      {comparison.extracted_fields.removed.length > 0 && (
+                        <Box>
+                          <Chip label={`${comparison.extracted_fields.removed.length} Removed Fields`} color="error" size="small" sx={{ mb: 1 }} />
+                          <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'error.50', maxHeight: 200, overflow: 'auto' }}>
+                            {comparison.extracted_fields.removed.slice(0, 8).map((item, idx) => (
+                              <Box key={idx} sx={{ mb: 1, pb: 1, borderBottom: idx < 7 ? '1px solid' : 'none', borderColor: 'divider' }}>
+                                <Typography variant="body2" fontWeight="medium" sx={{ textDecoration: 'line-through' }}>{item.field}</Typography>
+                                <Typography variant="caption" color="text.secondary" noWrap>
+                                  {String(item.value).slice(0, 60)}{String(item.value).length > 60 ? '...' : ''}
+                                </Typography>
+                              </Box>
+                            ))}
+                            {comparison.extracted_fields.removed.length > 8 && (
+                              <Typography variant="caption" color="text.secondary">
+                                +{comparison.extracted_fields.removed.length - 8} more...
+                              </Typography>
+                            )}
+                          </Paper>
+                        </Box>
                       )}
                     </Box>
-                    <Box>
-                      <Typography variant="subtitle2">Updated Fields</Typography>
-                      {comparison.extracted_fields.changed.length === 0 ? (
-                        <Typography variant="body2" color="text.secondary">No updated fields.</Typography>
-                      ) : (
-                        <List dense>
-                          {comparison.extracted_fields.changed.map((item) => (
-                            <ListItem key={`changed-${item.field}-${item.document_id}`}>
-                              <ListItemText
-                                primary={`${item.field}: ${item.old_value} → ${item.new_value}`}
-                                secondary={item.document_name || 'Unknown document'}
-                              />
-                            </ListItem>
-                          ))}
-                        </List>
-                      )}
-                    </Box>
-                  </Stack>
-                </Box>
+                  </Paper>
+                )}
+
+                {/* No Changes Message */}
+                {comparison.findings.new_issues.length === 0 && 
+                 comparison.findings.resolved_issues.length === 0 && 
+                 comparison.documents.added_documents.length === 0 && 
+                 comparison.documents.removed_documents.length === 0 &&
+                 comparison.extracted_fields.added.length === 0 && 
+                 comparison.extracted_fields.removed.length === 0 &&
+                 comparison.extracted_fields.changed.length === 0 && (
+                  <Alert severity="info" icon={<span>✨</span>}>
+                    No significant changes detected between these runs.
+                  </Alert>
+                )}
               </Stack>
             )}
           </Stack>

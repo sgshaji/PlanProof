@@ -663,8 +663,21 @@ async def compare_runs(
         documents_a = _load_documents(run_a)
         documents_b = _load_documents(run_b)
 
-        if not documents_a or not documents_b:
-            raise HTTPException(status_code=404, detail="Both runs must have associated documents")
+        if not documents_a and not documents_b:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Neither Run #{run_id_a} nor Run #{run_id_b} have associated documents. Cannot compare runs without documents."
+            )
+        if not documents_a:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Run #{run_id_a} has no associated documents. Please select a run with documents."
+            )
+        if not documents_b:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Run #{run_id_b} has no associated documents. Please select a run with documents."
+            )
 
         doc_lookup_a = {doc.id: doc for doc in documents_a}
         doc_lookup_b = {doc.id: doc for doc in documents_b}

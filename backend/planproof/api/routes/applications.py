@@ -205,6 +205,7 @@ async def get_application_details(
                 "id": run.id,
                 "created_at": run.started_at.isoformat() if run.started_at else None,
                 "status": run.status,
+                "has_documents": len(document_ids) > 0,  # Needed for compare runs feature
                 "validation_summary": {
                     "pass": checks_pass,
                     "fail": checks_fail,
