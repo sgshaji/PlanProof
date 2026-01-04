@@ -1,7 +1,5 @@
 import axios from 'axios';
 
-// Use nullish coalescing to respect empty string (for Vite proxy)
-// Only fall back to '' if VITE_API_URL is undefined
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? '';
 
 const apiClient = axios.create({
