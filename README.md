@@ -22,8 +22,10 @@ PlanProof is an intelligent validation system for UK planning applications that 
 - **Automated Document Analysis**: Extracts planning application data using Azure Document Intelligence
 - **30+ Validation Rules**: Comprehensive validation across 11 categories (Field Requirements, Document Requirements, Consistency, Fees, Ownership, Prior Approval, Constraints, BNG, Plan Quality, Modifications, Spatial)
 - **Natural Language Findings**: User-friendly validation results categorized by topic, not technical severity
+- **Human-in-the-Loop Review**: Officer review interface for findings requiring human judgment
+- **Compare Runs**: Track changes between validation runs to monitor progress
 - **Document Intelligence**: Identifies missing documents and suggests alternatives from submission packages
-- **Officer-Friendly UX(for testing only)**: Modern React interface designed specifically for planning officers
+- **Officer-Friendly UX**: Modern React interface designed specifically for planning officers
 - **Evidence-Based Validation**: All findings link to specific documents and page numbers
 - **Delta Tracking**: Monitors changes across application versions
 - **Parent Discovery**: Automatic identification of related planning applications
@@ -58,24 +60,56 @@ PlanProof is an intelligent validation system for UK planning applications that 
 
 ### Infrastructure
 - **Containerization**: Docker & Docker Compose
-- **Deployment**: Azure-ready configuration
-- **CI/CD**: GitHub Actions (coming soon)
+- **Deployment**: Azure Container Apps
+- **CI/CD**: GitHub Actions
 
 ## ⚡ Quick Start
 
 ### Prerequisites
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 13+
+- Docker & Docker Compose (recommended)
+- OR: Python 3.11+, Node.js 18+, PostgreSQL 13+
 - Azure OpenAI access
 - Azure Document Intelligence resource
 
-### Local Development
+### 🐳 Docker Quick Start (Recommended)
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/planproof.git
-   cd planproof
+   git clone https://github.com/AathiraTD/PlanProof.git
+   cd PlanProof
+   ```
+
+2. **Set up environment variables**
+   ```bash
+   # Copy the example env file
+   cp config/production.env.example .env
+   
+   # Edit .env with your Azure credentials
+   # Required: DATABASE_URL, AZURE_OPENAI_*, AZURE_DOCINTEL_*, JWT_SECRET_KEY
+   ```
+
+3. **Start with Docker Compose**
+   ```bash
+   cd infrastructure/docker
+   docker-compose -f docker-compose.dev.yml up -d
+   ```
+
+4. **Access the application**
+   - Frontend: http://localhost:3001
+   - API: http://localhost:8000
+   - API Docs: http://localhost:8000/api/docs
+
+5. **View logs**
+   ```bash
+   docker-compose -f docker-compose.dev.yml logs -f
+   ```
+
+### 💻 Local Development (Without Docker)
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/AathiraTD/PlanProof.git
+   cd PlanProof
    ```
 
 2. **Set up backend**
@@ -113,15 +147,7 @@ PlanProof is an intelligent validation system for UK planning applications that 
 5. **Access the application**
    - Frontend: http://localhost:5173
    - API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-### Docker Deployment
-
-```bash
-docker-compose -f infrastructure/docker/docker-compose.yml up
-```
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deployment instructions.
+   - API Docs: http://localhost:8000/api/docs
 
 ## 📁 Project Structure
 
@@ -142,56 +168,45 @@ planproof/
 │   │   ├── components/        # Reusable UI components
 │   │   ├── pages/             # Page components
 │   │   ├── contexts/          # React contexts
-│   │   └── services/          # API clients
+│   │   └── api/               # API clients
 │   └── ...
 │
 ├── infrastructure/            # Deployment & DevOps
 │   ├── docker/                # Dockerfiles & compose files
-│   └── scripts/               # Deployment scripts
+│   └── azure/                 # Azure deployment scripts
 │
 ├── docs/                      # Documentation
 │   ├── features/              # Feature documentation
 │   ├── deployment/            # Deployment guides
 │   └── troubleshooting/       # Common issues & fixes
 │
-├── artifacts/                 # Static assets & data
-│   ├── rule_catalog.json      # Validation rules catalog
-│   └── sample_data/           # Sample applications
+├── config/                    # Configuration files
+│   └── production.env.example # Environment variable template
 │
-└── archive/                   # Historical documentation
+└── artifacts/                 # Static assets & data
+    └── rule_catalog.json      # Validation rules catalog
 ```
 
 ## 📚 Documentation
 
 ### Getting Started
 - **[Quick Start Guide](docs/QUICKSTART.md)** - Get up and running in 10 minutes
-- **[Local Setup Guide](docs/setup-local.md)** - Detailed local development setup
+- **[Docker Setup](infrastructure/docker/README.md)** - Docker development environment
 - **[Quick Reference](docs/QUICK_REFERENCE.md)** - Common commands and workflows
 
 ### System Documentation
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - System design and components
 - **[API Integration Guide](docs/API_INTEGRATION_GUIDE.md)** - Backend API reference
 - **[Database Schema Management](docs/DATABASE_SCHEMA_MANAGEMENT.md)** - Alembic migrations and schema
-- **[Query Guide](docs/QUERY_GUIDE.md)** - Database queries and optimization
 
 ### Deployment & Operations
 - **[Deployment Guide](docs/DEPLOYMENT.md)** - General deployment instructions
 - **[Azure Container Apps Guide](docs/AZURE_CONTAINER_APPS.md)** - Production Azure deployment
-- **[Docker Setup](docs/deployment/docker-setup.md)** - Docker containerization
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
 
 ### Development
 - **[Testing Guide](docs/TESTING_GUIDE.md)** - Running and writing tests
-- **[Test Coverage Analysis](docs/TEST_COVERAGE_ANALYSIS.md)** - Coverage reports
 - **[Contributing Guide](docs/CONTRIBUTING.md)** - How to contribute
-- **[Migration Guide](docs/MIGRATION_GUIDE.md)** - Upgrading between versions
-- **[Accessibility](docs/accessibility.md)** - WCAG compliance
-
-### Feature Documentation
-- [Address Proposal Fields](docs/features/ADDRESS_PROPOSAL_IMPLEMENTATION.md)
-- [Evidence Candidate Docs](docs/features/EVIDENCE_CANDIDATE_DOCS_README.md)
-- [Parent Discovery](docs/features/PARENT_DISCOVERY_IMPLEMENTATION.md)
-- [Extracted Fields Display](docs/features/EXTRACTED_FIELDS_UI_DISPLAY.md)
 
 ## 🔧 Development
 
@@ -233,19 +248,26 @@ npm run lint
 npm run build
 ```
 
-### Running Tests
+### Docker Commands
 
 ```bash
-# Backend tests
-cd backend
-pytest
+cd infrastructure/docker
 
-# Frontend tests
-cd frontend
-npm test
+# Start services
+docker-compose -f docker-compose.dev.yml up -d
 
-# E2E tests
-npm run test:e2e
+# View logs
+docker-compose -f docker-compose.dev.yml logs -f
+
+# Rebuild after changes
+docker-compose -f docker-compose.dev.yml up --build -d
+
+# Stop services
+docker-compose -f docker-compose.dev.yml down
+
+# Restart a specific service
+docker-compose -f docker-compose.dev.yml restart backend
+docker-compose -f docker-compose.dev.yml restart frontend
 ```
 
 ## 🚀 Deployment
@@ -271,12 +293,23 @@ The application is deployed on Azure Container Apps with auto-scaling capabiliti
 ```
 
 **Manage Deployment:**
-```powershell
+```bash
 # View status
 az containerapp show --name planproof-backend --resource-group planproof-rg
-� Security & Privacy
 
-This is a **private repository**. The application handles sensitive planning data and Azure credentials:
+# Scale replicas
+az containerapp update --name planproof-backend --resource-group planproof-rg --min-replicas 1
+
+# Scale to 0 when not in use (cost savings)
+az containerapp update --name planproof-backend --resource-group planproof-rg --min-replicas 0
+az containerapp update --name planproof-frontend --resource-group planproof-rg --min-replicas 0
+```
+
+See [docs/AZURE_CONTAINER_APPS.md](docs/AZURE_CONTAINER_APPS.md) for detailed instructions.
+
+## 🔒 Security & Privacy
+
+This application handles sensitive planning data and Azure credentials:
 
 - All Azure credentials stored in `.env` (never committed to git)
 - Azure PostgreSQL with SSL/TLS encryption
@@ -295,34 +328,6 @@ This is a **private repository**. The application handles sensitive planning dat
 - Document Intelligence: Pay-per-use (variable)
 
 **Total: ~£50-70/month + AI usage**
-
-**Cost Savings:**
-```powershell
-# Scale to 0 when not in use
-az containerapp update --name planproof-backend --resource-group planproof-rg --min-replicas 0
-az containerapp update --name planproof-frontend --resource-group planproof-rg --min-replicas 0
-```
-
-## 📞 Support
-
-For questions or issues:
-- Check [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- Review [Changelog](docs/CHANGELOG.md) for recent updates
-- Contact the development team
-
----
-
-**Built with ❤️ for UK planning officers | Powered by Azure AI**
-az containerapp update --name planproof-backend --resource-group planproof-rg --min-replicas 1
-```
-
-### Local Development with Docker
-
-```bash
-docker-compose -f infrastructure/docker/docker-compose.yml up -d
-```
-
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/AZURE_CONTAINER_APPS.md](docs/AZURE_CONTAINER_APPS.md) for detailed instructions.
 
 ## 🤝 Contributing
 
@@ -346,9 +351,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/planproof/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/planproof/discussions)
+- **Issues**: [GitHub Issues](https://github.com/AathiraTD/PlanProof/issues)
+- **Documentation**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
 ---
 
-Made with ❤️ for planning officers
+Made with ❤️ for UK planning officers | Powered by Azure AI

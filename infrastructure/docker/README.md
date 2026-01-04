@@ -2,6 +2,15 @@
 
 This guide explains how to run PlanProof using Docker for development with proper CORS configuration.
 
+## Prerequisites
+
+1. **Docker & Docker Compose** installed
+2. **Environment file** (`.env`) in the project root with required variables:
+   ```bash
+   # Copy the example and fill in your credentials
+   cp ../../config/production.env.example ../../.env
+   ```
+
 ## Quick Start
 
 1. **Navigate to the docker directory:**
@@ -15,9 +24,11 @@ This guide explains how to run PlanProof using Docker for development with prope
    ```
 
 3. **Access the application:**
-   - Frontend: http://localhost:3001 (mapped from container port 3000)
-   - Backend API: http://localhost:8000
-   - API Docs: http://localhost:8000/api/docs
+   | Service | URL | Description |
+   |---------|-----|-------------|
+   | Frontend | http://localhost:3001 | React app (Vite dev server) |
+   | Backend API | http://localhost:8000 | FastAPI server |
+   | API Docs | http://localhost:8000/api/docs | Swagger UI |
 
 4. **View logs:**
    ```bash
@@ -30,28 +41,42 @@ This guide explains how to run PlanProof using Docker for development with prope
 
 The frontend uses **relative URLs** for API requests, which allows Vite's proxy to forward them to the backend:
 
-- **`frontend/.env`**: `VITE_API_URL=` (empty/unset)
+- **`VITE_API_URL`**: Empty (uses relative URLs)
+- **`DOCKER_ENV=true`**: Signals Vite to proxy to Docker network
 - **`vite.config.ts`**: Proxy configuration routes `/api/*` requests
   - When running in Docker: Uses `http://backend:8000` (internal Docker network)
   - When running locally: Uses `http://localhost:8000`
 
 ### Backend Configuration
 
-The backend allows specific origins via the `API_CORS_ORIGINS` environment variable:
+The backend allows specific origins via the `API_CORS_ORIGINS` environment variable in your `.env`:
 
-```yaml
-API_CORS_ORIGINS: ["http://localhost:3000","http://localhost:3001","http://localhost:3002","http://localhost:8501"]
 ```
-
-This ensures the backend accepts requests from the frontend running on port 3000.
+API_CORS_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:3002
+```
 
 ### How It Works
 
-1. Browser makes request to frontend at `http://localhost:3000`
-2. Frontend code uses relative URL: `/api/v1/runs/...`
-3. Vite's dev proxy intercepts and forwards to: `http://backend:8000/api/v1/runs/...`
-4. Backend responds with header: `Access-Control-Allow-Origin: http://localhost:3000`
-5. Browser allows the response because origins match
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Browser (http://localhost:3001)                                │
+│  └── Makes API request to /api/v1/runs/...                     │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Frontend Container (Vite Dev Server)                           │
+│  └── Proxy intercepts /api/* requests                          │
+│  └── Forwards to http://backend:8000 (Docker network)          │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Backend Container (FastAPI)                                    │
+│  └── Receives request, validates CORS origin                   │
+│  └── Returns response with Access-Control-Allow-Origin header  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Common Commands
 
