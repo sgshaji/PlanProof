@@ -243,17 +243,23 @@ export default function Results() {
       )}
 
       {/* Header */}
-      <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+      <Paper elevation={3} sx={{ p: 4, mb: 3, bgcolor: 'background.paper' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Assignment sx={{ fontSize: 32, color: 'primary.main' }} />
-              <Typography variant="h4">
-                Run Results
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+              <Assignment sx={{ fontSize: 40, color: 'primary.main' }} />
+              <Typography variant="h3" sx={{ fontWeight: 700 }}>
+                Validation Results
               </Typography>
             </Box>
-            <Typography variant="body2" color="text.secondary">
-              Run ID: #{runId} | Status: <Chip label={runStatus} size="small" color={isProcessing ? 'warning' : 'success'} />
+            <Typography variant="body1" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              Run #{runId} •
+              <Chip
+                label={runStatus}
+                size="small"
+                color={isProcessing ? 'warning' : 'success'}
+                sx={{ fontWeight: 600 }}
+              />
             </Typography>
           </Box>
           <Stack direction="row" spacing={2}>
@@ -261,6 +267,7 @@ export default function Results() {
               variant="outlined"
               startIcon={<ArrowBack />}
               onClick={() => navigate(`/applications/${applicationId}`)}
+              size="large"
             >
               Back to Case
             </Button>
@@ -270,15 +277,19 @@ export default function Results() {
                 startIcon={<Description />}
                 onClick={handleDownloadReport}
                 disabled={downloadingReport}
+                size="large"
               >
-                {downloadingReport ? 'Preparing report...' : 'Download report'}
+                {downloadingReport ? 'Preparing...' : 'Download Report'}
               </Button>
             )}
             {hasReviewableFindings && (
               <Button
                 variant="contained"
+                color="warning"
                 startIcon={<RateReview />}
                 onClick={() => navigate(`/applications/${applicationId}/runs/${runId}/review`)}
+                size="large"
+                sx={{ fontWeight: 600 }}
               >
                 Start Review
               </Button>
@@ -286,49 +297,117 @@ export default function Results() {
           </Stack>
         </Box>
 
-        {/* Summary Stats */}
-        <Grid container spacing={2} sx={{ mt: 2 }}>
+        {/* Summary Stats - Enhanced with better visuals */}
+        <Grid container spacing={3} sx={{ mt: 1 }}>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" color="primary">
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                textAlign: 'center',
+                bgcolor: 'primary.lighter',
+                border: '2px solid',
+                borderColor: 'primary.main',
+                borderRadius: 2,
+              }}
+            >
+              <Typography variant="h3" color="primary.main" sx={{ fontWeight: 700, mb: 0.5 }}>
                 {summary.total_documents || 0}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Documents
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                Documents Processed
               </Typography>
-            </Box>
+            </Paper>
           </Grid>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" color="error.main">
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                textAlign: 'center',
+                bgcolor: criticalFindings.length > 0 ? 'error.lighter' : 'grey.50',
+                border: '2px solid',
+                borderColor: criticalFindings.length > 0 ? 'error.main' : 'grey.300',
+                borderRadius: 2,
+              }}
+            >
+              <Typography
+                variant="h3"
+                color={criticalFindings.length > 0 ? 'error.main' : 'text.secondary'}
+                sx={{ fontWeight: 700, mb: 0.5 }}
+              >
                 {criticalFindings.length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Critical
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', fontSize: '0.75rem' }}>
+                Critical Issues
               </Typography>
-            </Box>
+            </Paper>
           </Grid>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" color="warning.main">
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                textAlign: 'center',
+                bgcolor: warningFindings.length > 0 ? 'warning.lighter' : 'grey.50',
+                border: '2px solid',
+                borderColor: warningFindings.length > 0 ? 'warning.main' : 'grey.300',
+                borderRadius: 2,
+              }}
+            >
+              <Typography
+                variant="h3"
+                color={warningFindings.length > 0 ? 'warning.main' : 'text.secondary'}
+                sx={{ fontWeight: 700, mb: 0.5 }}
+              >
                 {warningFindings.length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', fontSize: '0.75rem' }}>
                 Warnings
               </Typography>
-            </Box>
+            </Paper>
           </Grid>
           <Grid item xs={6} md={3}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography variant="h4" color="info.main">
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                textAlign: 'center',
+                bgcolor: needsReviewFindings.length > 0 ? 'info.lighter' : 'grey.50',
+                border: '2px solid',
+                borderColor: needsReviewFindings.length > 0 ? 'info.main' : 'grey.300',
+                borderRadius: 2,
+              }}
+            >
+              <Typography
+                variant="h3"
+                color={needsReviewFindings.length > 0 ? 'info.main' : 'text.secondary'}
+                sx={{ fontWeight: 700, mb: 0.5 }}
+              >
                 {needsReviewFindings.length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', fontSize: '0.75rem' }}>
                 Needs Review
               </Typography>
-            </Box>
+            </Paper>
           </Grid>
         </Grid>
+
+        {/* Quick Summary Message */}
+        {findings.length > 0 && (
+          <Alert
+            severity={criticalFindings.length > 0 ? 'error' : warningFindings.length > 0 ? 'warning' : 'success'}
+            sx={{ mt: 3 }}
+          >
+            <Typography variant="body1" sx={{ fontWeight: 600 }}>
+              {criticalFindings.length > 0
+                ? `⚠️ ${criticalFindings.length} critical ${criticalFindings.length === 1 ? 'issue requires' : 'issues require'} immediate attention`
+                : warningFindings.length > 0
+                ? `✓ No critical issues found, but ${warningFindings.length} ${warningFindings.length === 1 ? 'warning needs' : 'warnings need'} review`
+                : '✅ All validation checks passed successfully!'}
+            </Typography>
+          </Alert>
+        )}
       </Paper>
 
       {/* Prior Approval Documents - Show if any PA rules are in findings */}
@@ -344,43 +423,57 @@ export default function Results() {
 
       {/* Documents List */}
       <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Documents
+        <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Description color="primary" />
+          Submitted Documents
+          <Chip label={documents.length} size="small" color="primary" />
         </Typography>
         {documents.length === 0 ? (
           <Alert severity="info">No documents found</Alert>
         ) : (
-          <List>
+          <Grid container spacing={2}>
             {documents.map((doc: any, index: number) => (
-              <ListItem
-                key={index}
-                sx={{
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  borderRadius: 1,
-                  mb: 1,
-                }}
-              >
-                <Description sx={{ mr: 2, color: 'text.secondary' }} />
-                <ListItemText
-                  primary={doc.document_name || `Document ${index + 1}`}
-                  secondary={doc.document_type || 'Unknown type'}
-                />
-                {doc.status === 'processed' && (
-                  <CheckCircle color="success" sx={{ ml: 2 }} />
-                )}
-              </ListItem>
+              <Grid item xs={12} sm={6} md={4} key={index}>
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    p: 2,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      boxShadow: 2,
+                      transform: 'translateY(-2px)',
+                    },
+                  }}
+                >
+                  <Description sx={{ fontSize: 32, color: 'primary.main' }} />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 600, mb: 0.5 }}>
+                      {doc.document_name || `Document ${index + 1}`}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {doc.document_type || 'Unknown type'}
+                    </Typography>
+                  </Box>
+                  {doc.status === 'processed' && (
+                    <CheckCircle color="success" sx={{ fontSize: 28 }} />
+                  )}
+                </Paper>
+              </Grid>
             ))}
-          </List>
+          </Grid>
         )}
       </Paper>
 
       {/* Extracted Fields - NEW UX */}
       {results.extracted_fields && Object.keys(results.extracted_fields).length > 0 && (
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
-            <FindInPage />
-            Extracted Fields ({Object.keys(results.extracted_fields).length})
+          <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <FindInPage color="primary" />
+            Extracted Information
+            <Chip label={`${Object.keys(results.extracted_fields).length} fields`} size="small" color="primary" />
           </Typography>
           <ExtractedFieldsDisplay extractedFields={results.extracted_fields} />
         </Paper>
