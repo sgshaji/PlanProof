@@ -37,7 +37,8 @@ import { getApiErrorMessage } from '../api/errorUtils';
 import LLMCallTracker from '../components/LLMCallTracker';
 import { announceToScreenReader } from '../utils/accessibility';
 
-const DRAWER_WIDTH = 300;
+const DRAWER_WIDTH = 280;
+const LAYOUT_DRAWER_WIDTH = 240; // Width of the parent Layout drawer
 
 interface Finding {
   id: number;
@@ -91,7 +92,11 @@ const HILReview: React.FC = () => {
   }, [runId]);
 
   const loadReviewData = async () => {
-    if (!runId) return;
+    // Early return if no runId - must set loading to false to avoid stuck spinner
+    if (!runId) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -327,18 +332,44 @@ const HILReview: React.FC = () => {
     ? (reviewStatus.reviewed_count / reviewStatus.total_findings) * 100
     : 0;
 
+  // Safety check - ensure currentFinding exists before rendering
+  if (!currentFinding) {
+    console.warn('HILReview: currentFinding is undefined at index', currentIndex, 'findings length:', findings.length);
+    return (
+      <Container maxWidth="lg" sx={{ mt: 4 }}>
+        <Alert severity="warning">
+          Unable to load finding data. Please try refreshing the page.
+        </Alert>
+        <Box sx={{ mt: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<ArrowBack />}
+            onClick={() => navigate(`/applications/${applicationId}/runs/${runId}`)}
+          >
+            Back to Results
+          </Button>
+        </Box>
+      </Container>
+    );
+  }
+
   return (
-    <Box sx={{ display: 'flex' }}>
-      {/* Sidebar Navigation */}
+    <Box sx={{ display: 'flex', ml: { sm: 0 }, minHeight: 'calc(100vh - 64px)' }}>
+      {/* Sidebar Navigation - positioned after the Layout's drawer */}
       <Drawer
         variant="permanent"
         sx={{
           width: DRAWER_WIDTH,
           flexShrink: 0,
+          display: { xs: 'none', md: 'block' }, // Hide on small screens to avoid overlap
           '& .MuiDrawer-paper': {
             width: DRAWER_WIDTH,
             boxSizing: 'border-box',
-            position: 'relative',
+            position: 'fixed',
+            left: { sm: LAYOUT_DRAWER_WIDTH }, // Position after Layout drawer
+            top: 64, // Below AppBar
+            height: 'calc(100vh - 64px)',
+            borderRight: '1px solid rgba(0, 0, 0, 0.12)',
           },
         }}
       >
@@ -421,8 +452,17 @@ const HILReview: React.FC = () => {
         </Box>
       </Drawer>
 
-      {/* Main Content */}
-      <Box component="main" sx={{ flexGrow: 1, p: 3 }} id="main-content">
+      {/* Main Content - account for the fixed sidebar drawer */}
+      <Box 
+        component="main" 
+        sx={{ 
+          flexGrow: 1, 
+          p: 3,
+          ml: { md: `${DRAWER_WIDTH}px` }, // Offset for the fixed sidebar on medium+ screens
+          width: { xs: '100%', md: `calc(100% - ${DRAWER_WIDTH}px)` },
+        }} 
+        id="main-content"
+      >
         <Container maxWidth="md">
           {/* LLM Call Tracker */}
           <LLMCallTracker
