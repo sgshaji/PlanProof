@@ -125,6 +125,57 @@ const CATEGORY_CONFIG: Record<string, {
   },
 };
 
+// Rule descriptions - plain language explanations of what each rule checks
+const RULE_DESCRIPTIONS: Record<string, string> = {
+  // Document requirements
+  'DOC-001': 'All planning applications must include accurate location plans showing the site boundary.',
+  'DOC-002': 'Block plans must show the proposed development in context with neighboring properties.',
+  'DOC-003': 'Elevation drawings are required to show all external faces of the building.',
+  'DOC-004': 'Floor plans must show the layout and room dimensions for all floors.',
+  'DOC-005': 'Design and access statements explain how the proposal fits the site and area.',
+
+  // Field requirements
+  'FIELD-001': 'The application reference number must be provided for tracking purposes.',
+  'FIELD-002': 'The site address must be complete and accurate for location identification.',
+  'FIELD-003': 'Applicant details are required for correspondence and legal purposes.',
+  'FIELD-004': 'The proposal description must clearly explain what is being applied for.',
+  'FIELD-005': 'Development type classification helps determine processing requirements.',
+
+  // Prior Approval
+  'PA-01': 'Prior approval applications for permitted development must include specific evidence as required by the GPDO.',
+  'PA-02': 'Transport and highways impact must be assessed for prior approval applications.',
+  'PA-03': 'Contamination risks must be evaluated for prior approval applications.',
+  'PA-04': 'Flooding risks must be considered for prior approval applications.',
+  'PA-05': 'Noise impacts on residential amenity must be assessed.',
+
+  // Fees
+  'FEE-001': 'The correct application fee must be calculated and paid based on the development type and scale.',
+  'FEE-002': 'Fee exemptions must be properly documented and justified.',
+
+  // Ownership
+  'OWN-001': 'A valid ownership certificate (A, B, C, or D) must be completed confirming the applicant\'s interest in the land.',
+  'OWN-002': 'Certificate B requires notice to be served on other landowners with details provided.',
+  'OWN-003': 'Agricultural land notice requirements apply when part of the site has been agricultural land in the last 10 years.',
+
+  // Constraints
+  'CON-001': 'Heritage asset impacts must be properly assessed if the site affects listed buildings or conservation areas.',
+  'CON-002': 'Tree preservation orders require specific justification and mitigation for tree works.',
+  'CON-003': 'Flood risk assessments are required for sites in flood zones 2 or 3.',
+  'CON-004': 'Conservation area consent may be required for demolition or certain works.',
+
+  // BNG
+  'BNG-001': 'Biodiversity Net Gain of at least 10% must be demonstrated for major developments.',
+  'BNG-002': 'A biodiversity gain plan must show how the 10% gain will be achieved and maintained.',
+  'BNG-003': 'Habitat condition assessments must use the statutory biodiversity metric.',
+
+  // Plan quality
+  'PLAN-001': 'Plans must include a north arrow for correct orientation.',
+  'PLAN-002': 'All plans must be drawn to a stated metric scale.',
+  'PLAN-003': 'Plans must show accurate dimensions and measurements.',
+  'PLAN-004': 'Site boundary must be clearly marked with a red line on all plans.',
+  'PLAN-005': 'Plans must be clear, legible, and of sufficient quality to assess the proposal.',
+};
+
 // Better status labels with enhanced "Needs Review" guidance
 const STATUS_LABELS: Record<string, { label: string; description: string }> = {
   missing: {
@@ -293,106 +344,165 @@ export default function ValidationFindingsDisplay({ findings, onViewDocument, ru
 
                 <Stack spacing={2}>
                   {categoryFindings.map((finding, index) => {
-                    const statusInfo = STATUS_LABELS[finding.status] || { 
-                      label: finding.status, 
-                      description: '' 
+                    const statusInfo = STATUS_LABELS[finding.status] || {
+                      label: finding.status,
+                      description: ''
                     };
                     const statusColor = getStatusColor(finding.status, finding.severity);
+                    const ruleDescription = RULE_DESCRIPTIONS[finding.rule_id];
+                    const isNeedsReview = finding.status === 'needs_review';
+                    const hasEvidence = finding.evidence_details && finding.evidence_details.length > 0;
 
                     return (
                       <Box
                         key={`${finding.rule_id}-${index}`}
                         sx={{
-                          p: 2.5,
-                          border: '1px solid',
+                          p: 3,
+                          border: '2px solid',
                           borderColor: finding.status === 'pass' ? 'success.main' : `${statusColor}.main`,
-                          borderRadius: 1,
-                          borderLeft: '4px solid',
+                          borderRadius: 2,
+                          borderLeft: '6px solid',
                           borderLeftColor: finding.status === 'pass' ? 'success.main' : `${statusColor}.main`,
                           backgroundColor: finding.status === 'pass' ? 'success.lighter' : `${statusColor}.lighter`,
+                          boxShadow: isNeedsReview ? 3 : 1,
                         }}
                       >
-                        {/* Header with status and rule info */}
-                        <Box sx={{ display: 'flex', gap: 1, mb: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <Chip 
+                        {/* Rule Title - PRIMARY HEADING (large and prominent) */}
+                        <Typography
+                          variant="h5"
+                          gutterBottom
+                          sx={{
+                            fontSize: '1.25rem',
+                            fontWeight: 700,
+                            color: 'text.primary',
+                            mb: 1,
+                            lineHeight: 1.3
+                          }}
+                        >
+                          {finding.title || statusInfo.label}
+                        </Typography>
+
+                        {/* Header with status and rule info (SECONDARY - smaller and less prominent) */}
+                        <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Chip
                             label={statusInfo.label}
                             color={statusColor}
                             size="small"
                             icon={finding.status === 'pass' ? <CheckCircle /> : finding.status === 'needs_review' ? <Info /> : <Warning />}
+                            sx={{ fontWeight: 600 }}
                           />
-                          <Chip 
-                            label={finding.rule_id}
-                            size="small" 
+                          <Chip
+                            label={`Rule: ${finding.rule_id}`}
+                            size="small"
                             variant="outlined"
-                            sx={{ fontSize: '0.7rem' }}
+                            sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}
                           />
                           {finding.document_name && (
-                            <Chip 
-                              label={finding.document_name} 
-                              size="small" 
+                            <Chip
+                              label={finding.document_name}
+                              size="small"
                               icon={<Description />}
                               variant="outlined"
                             />
                           )}
                         </Box>
 
-                        {/* Rule Title - Primary heading in natural language */}
-                        <Typography variant="h6" gutterBottom sx={{ fontSize: '1.1rem', fontWeight: 600, color: 'text.primary' }}>
-                          {finding.title || statusInfo.label}
-                        </Typography>
+                        {/* Rule Description - What this rule checks */}
+                        {ruleDescription && (
+                          <Alert severity="info" icon={<Info />} sx={{ mb: 2, bgcolor: 'rgba(33, 150, 243, 0.08)' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              <strong>What this checks:</strong> {ruleDescription}
+                            </Typography>
+                          </Alert>
+                        )}
 
                         {/* Main Message */}
-                        <Typography variant="body1" sx={{ mb: 1.5 }}>
+                        <Typography variant="body1" sx={{ mb: 2, fontSize: '1rem', lineHeight: 1.6 }}>
                           {finding.message}
                         </Typography>
 
                         {/* Status Description - Enhanced for needs_review */}
-                        {statusInfo.description && finding.status === 'needs_review' && (
+                        {statusInfo.description && isNeedsReview && (
                           <Alert severity="warning" icon={<Info />} sx={{ mb: 2 }}>
-                            <Typography variant="body2">
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
                               {statusInfo.description}
                             </Typography>
                           </Alert>
                         )}
 
-                        {/* Evidence Details */}
-                        {finding.evidence_details && finding.evidence_details.length > 0 && (
-                          <Accordion sx={{ mt: 2, backgroundColor: 'rgba(255,255,255,0.7)' }}>
-                            <AccordionSummary expandIcon={<ExpandMore />}>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Visibility fontSize="small" />
-                                <Typography variant="body2" fontWeight="medium">
-                                  View Evidence ({finding.evidence_details.length} {finding.evidence_details.length === 1 ? 'source' : 'sources'})
+                        {/* Evidence Details - Show prominently for needs_review, collapsible for others */}
+                        {hasEvidence && (
+                          <>
+                            {isNeedsReview ? (
+                              <Box sx={{ mt: 2 }}>
+                                <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Visibility fontSize="small" color="primary" />
+                                  Evidence Found ({finding.evidence_details.length} {finding.evidence_details.length === 1 ? 'source' : 'sources'})
                                 </Typography>
-                              </Box>
-                            </AccordionSummary>
-                            <AccordionDetails>
-                              <Stack spacing={1.5}>
-                                {finding.evidence_details.map((evidence: any, idx: number) => (
-                                  <Box
-                                    key={idx}
-                                    sx={{
-                                      p: 2,
-                                      backgroundColor: 'background.paper',
-                                      borderRadius: 1,
-                                      border: '1px solid',
-                                      borderColor: 'divider',
-                                    }}
-                                  >
-                                    {evidence.document_name && (
-                                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                                        <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
-                                        {evidence.document_name} - Page {evidence.page}
+                                <Stack spacing={1.5}>
+                                  {finding.evidence_details.map((evidence: any, idx: number) => (
+                                    <Paper
+                                      key={idx}
+                                      elevation={2}
+                                      sx={{
+                                        p: 2.5,
+                                        backgroundColor: 'background.paper',
+                                        borderLeft: '3px solid',
+                                        borderLeftColor: 'primary.main',
+                                      }}
+                                    >
+                                      {evidence.document_name && (
+                                        <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                                          <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                                          {evidence.document_name} - Page {evidence.page}
+                                        </Typography>
+                                      )}
+                                      <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.primary', lineHeight: 1.6 }}>
+                                        "{evidence.snippet}"
                                       </Typography>
-                                    )}
-                                    <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
-                                      "{evidence.snippet}"
+                                    </Paper>
+                                  ))}
+                                </Stack>
+                              </Box>
+                            ) : (
+                              <Accordion sx={{ mt: 2, backgroundColor: 'rgba(255,255,255,0.7)' }}>
+                                <AccordionSummary expandIcon={<ExpandMore />}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Visibility fontSize="small" />
+                                    <Typography variant="body2" fontWeight="medium">
+                                      View Evidence ({finding.evidence_details.length} {finding.evidence_details.length === 1 ? 'source' : 'sources'})
                                     </Typography>
                                   </Box>
-                                ))}
-                              </Stack>
-                            </AccordionDetails>
-                          </Accordion>
+                                </AccordionSummary>
+                                <AccordionDetails>
+                                  <Stack spacing={1.5}>
+                                    {finding.evidence_details.map((evidence: any, idx: number) => (
+                                      <Box
+                                        key={idx}
+                                        sx={{
+                                          p: 2,
+                                          backgroundColor: 'background.paper',
+                                          borderRadius: 1,
+                                          border: '1px solid',
+                                          borderColor: 'divider',
+                                        }}
+                                      >
+                                        {evidence.document_name && (
+                                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                                            <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                                            {evidence.document_name} - Page {evidence.page}
+                                          </Typography>
+                                        )}
+                                        <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
+                                          "{evidence.snippet}"
+                                        </Typography>
+                                      </Box>
+                                    ))}
+                                  </Stack>
+                                </AccordionDetails>
+                              </Accordion>
+                            )}
+                          </>
                         )}
 
                         {/* Candidate Documents - NO CONFIDENCE PERCENTAGES */}
