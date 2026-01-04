@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Stage 2: Runtime
@@ -36,18 +36,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /root/.local /usr/local
 
 # Copy application code
-COPY planproof/ ./planproof/
-COPY alembic/ ./alembic/
-COPY alembic.ini .
-COPY main.py .
-COPY run_api.py .
-COPY pyproject.toml .
+COPY backend/planproof/ ./planproof/
+COPY backend/alembic/ ./alembic/
+COPY backend/alembic.ini .
+COPY backend/main.py .
+COPY backend/run_api.py .
+COPY backend/pyproject.toml .
 
 # Create necessary directories
 RUN mkdir -p runs data && chmod 777 runs data
 
 # Copy entry point script first (before user creation)
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY backend/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Create non-root user

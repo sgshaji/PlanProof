@@ -315,7 +315,7 @@ class ExtractedFieldsFormatter:
                 continue
 
             value = field_data.get("value")
-            confidence = field_data.get("confidence", 0.0)
+            confidence = field_data.get("confidence")  # Allow None
             unit = field_data.get("unit")
             extractor = field_data.get("extractor", "unknown")
 
@@ -338,6 +338,8 @@ class ExtractedFieldsFormatter:
     @classmethod
     def _get_confidence_label(cls, confidence: float) -> str:
         """Get human-readable confidence label."""
+        if confidence is None:
+            return "Unknown"
         if confidence >= 0.9:
             return "High"
         elif confidence >= 0.7:

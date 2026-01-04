@@ -46,6 +46,10 @@ cors_origins = settings.api_cors_origins
 if isinstance(cors_origins, str):
     cors_origins = [origin.strip() for origin in cors_origins.split(",")]
 
+# DEBUG: Log CORS origins at startup
+print(f"🌐 CORS Origins configured: {cors_origins}")
+print(f"🌐 CORS Origins type: {type(cors_origins)}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
