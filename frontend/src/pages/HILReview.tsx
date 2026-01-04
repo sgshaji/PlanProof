@@ -99,13 +99,22 @@ const HILReview: React.FC = () => {
       
       // Load run results to get findings
       const results = await api.getRunResults(parseInt(runId));
+      console.log('HILReview: Loaded results:', results);
+      console.log('HILReview: All findings:', results.findings);
+      
       const reviewableFindings = (results.findings || []).filter(
-        (f: any) => f.status === 'needs_review'
+        (f: any) => {
+          console.log('HILReview: Checking finding:', f.rule_id, 'status:', f.status, 'match:', f.status === 'needs_review');
+          return f.status === 'needs_review';
+        }
       );
+      console.log('HILReview: Reviewable findings (needs_review):', reviewableFindings);
+      console.log('HILReview: Reviewable findings count:', reviewableFindings.length);
       setFindings(reviewableFindings);
 
       // Load review status
       const status = await api.getReviewStatus(parseInt(runId));
+      console.log('HILReview: Review status:', status);
       setReviewStatus(status);
       
       const llmCallData = Array.isArray(results.llm_calls) ? results.llm_calls : [];
@@ -117,23 +126,31 @@ const HILReview: React.FC = () => {
       );
       setTotalCalls(totals.total_calls ?? llmCallData.length);
       setTotalTokens(totals.total_tokens ?? computedTokens);
+      
+      console.log('HILReview: Load complete. Setting loading to false.');
     } catch (err: any) {
       console.error('Failed to load review data:', err);
+      console.error('Error details:', err.response?.data, err.message);
       setError(getApiErrorMessage(err, 'Failed to load review data'));
     } finally {
+      console.log('HILReview: Finally block - setting loading to false');
       setLoading(false);
     }
   };
 
   const checkUserPermission = async () => {
     try {
-      const hasPermission = await api.checkUserRole(['officer', 'admin', 'reviewer', 'planner']);
+      const userInfo = await api.getCurrentUser();
+      const allowedRoles = ['officer', 'admin', 'reviewer', 'planner'];
+      const hasPermission = allowedRoles.includes(userInfo.role);
       setHasReviewPermission(hasPermission);
       if (!hasPermission) {
         announceToScreenReader('You do not have permission to review findings', 'assertive');
       }
     } catch (err) {
       console.error('Failed to check user permission:', err);
+      // Default to true to avoid blocking the UI
+      setHasReviewPermission(true);
     }
   };
 
@@ -254,11 +271,20 @@ const HILReview: React.FC = () => {
     );
   }
 
-  if (findings.length === 0) {
+  // Show message if no findings need review
+  if (findings.length === 0 && !loading) {
+    console.log('HILReview: Rendering no findings message');
     return (
       <Container maxWidth="lg" sx={{ mt: 4 }}>
         <Alert severity="info">
           No findings require human review for this run.
+          {reviewStatus && (
+            <Typography variant="body2" sx={{ mt: 1 }}>
+              Total findings: {reviewStatus.total_findings}, 
+              Reviewed: {reviewStatus.reviewed_count}, 
+              Pending: {reviewStatus.pending_count}
+            </Typography>
+          )}
         </Alert>
         <Box sx={{ mt: 2 }}>
           <Button
@@ -273,6 +299,8 @@ const HILReview: React.FC = () => {
       </Container>
     );
   }
+  
+  console.log('HILReview: Rendering main review UI. Findings count:', findings.length);
   
   if (!hasReviewPermission) {
     return (

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Box, Typography, Stack, Paper, Chip, Alert, Accordion, AccordionSummary, AccordionDetails, Button } from '@mui/material';
 import {
   Error,
@@ -21,6 +22,7 @@ import { useNavigate } from 'react-router-dom';
 interface ValidationFinding {
   rule_id: string;
   title: string;
+  description?: string;
   status: string;
   severity: string;
   message: string;
@@ -36,6 +38,118 @@ interface ValidationFindingsDisplayProps {
   onViewDocument?: (documentId: number, evidenceDetails?: any) => void;
   runId?: number;
   applicationId?: number;
+}
+
+// Evidence Accordion Component with pagination
+function EvidenceAccordion({ 
+  evidence, 
+  defaultExpanded = false, 
+  prominent = false 
+}: { 
+  evidence: any[]; 
+  defaultExpanded?: boolean; 
+  prominent?: boolean;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const INITIAL_DISPLAY_COUNT = 10;
+  
+  const displayedEvidence = showAll ? evidence : evidence.slice(0, INITIAL_DISPLAY_COUNT);
+  const hasMore = evidence.length > INITIAL_DISPLAY_COUNT;
+  
+  return (
+    <Accordion 
+      defaultExpanded={defaultExpanded}
+      sx={{ 
+        mt: 2, 
+        backgroundColor: prominent ? 'rgba(25, 118, 210, 0.08)' : 'rgba(255,255,255,0.7)',
+        border: prominent ? '2px solid' : '1px solid',
+        borderColor: prominent ? 'primary.main' : 'divider',
+      }}
+    >
+      <AccordionSummary 
+        expandIcon={<ExpandMore />}
+        sx={{
+          backgroundColor: prominent ? 'rgba(25, 118, 210, 0.04)' : 'transparent',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Visibility fontSize="small" color={prominent ? 'primary' : 'action'} />
+          <Typography 
+            variant="body2" 
+            fontWeight={prominent ? 600 : 500}
+            color={prominent ? 'primary.main' : 'text.primary'}
+          >
+            Evidence Found ({evidence.length} {evidence.length === 1 ? 'source' : 'sources'})
+          </Typography>
+        </Box>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Stack spacing={1.5}>
+          {displayedEvidence.map((item: any, idx: number) => (
+            <Paper
+              key={idx}
+              elevation={prominent ? 2 : 1}
+              sx={{
+                p: 2,
+                backgroundColor: 'background.paper',
+                borderLeft: prominent ? '3px solid' : '1px solid',
+                borderLeftColor: prominent ? 'primary.main' : 'divider',
+              }}
+            >
+              {item.document_name && (
+                <Typography 
+                  variant="caption" 
+                  color={prominent ? 'primary' : 'text.secondary'} 
+                  sx={{ display: 'block', mb: 0.5, fontWeight: prominent ? 600 : 400 }}
+                >
+                  <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
+                  {item.document_name} - Page {item.page}
+                </Typography>
+              )}
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontStyle: 'italic', 
+                  color: prominent ? 'text.primary' : 'text.secondary',
+                  lineHeight: 1.6 
+                }}
+              >
+                "{item.snippet}"
+              </Typography>
+            </Paper>
+          ))}
+          
+          {/* Show More / Show Less Button */}
+          {hasMore && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => setShowAll(!showAll)}
+                sx={{ textTransform: 'none' }}
+              >
+                {showAll 
+                  ? `Show Less` 
+                  : `Show ${evidence.length - INITIAL_DISPLAY_COUNT} More Evidence Items`
+                }
+              </Button>
+            </Box>
+          )}
+          
+          {/* Summary when showing all */}
+          {showAll && hasMore && (
+            <Typography 
+              variant="caption" 
+              color="text.secondary" 
+              sx={{ display: 'block', textAlign: 'center', mt: 1 }}
+            >
+              Showing all {evidence.length} evidence items
+            </Typography>
+          )}
+        </Stack>
+      </AccordionDetails>
+    </Accordion>
+  );
 }
 
 // Category-based organization with user-friendly labels
@@ -375,12 +489,27 @@ export default function ValidationFindingsDisplay({ findings, onViewDocument, ru
                             fontSize: '1.25rem',
                             fontWeight: 700,
                             color: 'text.primary',
-                            mb: 1,
+                            mb: 0.5,
                             lineHeight: 1.3
                           }}
                         >
                           {finding.title || statusInfo.label}
                         </Typography>
+
+                        {/* Rule description */}
+                        {finding.description && (
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: 'text.secondary',
+                              mb: 1.5,
+                              fontStyle: 'italic',
+                              lineHeight: 1.5
+                            }}
+                          >
+                            {finding.description}
+                          </Typography>
+                        )}
 
                         {/* Header with status and rule info (SECONDARY - smaller and less prominent) */}
                         <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -430,77 +559,21 @@ export default function ValidationFindingsDisplay({ findings, onViewDocument, ru
                           </Alert>
                         )}
 
-                        {/* Evidence Details - Show prominently for needs_review, collapsible for others */}
+                        {/* Evidence Details - Collapsible accordion for all cases */}
                         {hasEvidence && (
                           <>
                             {isNeedsReview ? (
-                              <Box sx={{ mt: 2 }}>
-                                <Typography variant="subtitle2" sx={{ mb: 1.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Visibility fontSize="small" color="primary" />
-                                  Evidence Found ({finding.evidence_details.length} {finding.evidence_details.length === 1 ? 'source' : 'sources'})
-                                </Typography>
-                                <Stack spacing={1.5}>
-                                  {finding.evidence_details.map((evidence: any, idx: number) => (
-                                    <Paper
-                                      key={idx}
-                                      elevation={2}
-                                      sx={{
-                                        p: 2.5,
-                                        backgroundColor: 'background.paper',
-                                        borderLeft: '3px solid',
-                                        borderLeftColor: 'primary.main',
-                                      }}
-                                    >
-                                      {evidence.document_name && (
-                                        <Typography variant="caption" color="primary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
-                                          <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
-                                          {evidence.document_name} - Page {evidence.page}
-                                        </Typography>
-                                      )}
-                                      <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.primary', lineHeight: 1.6 }}>
-                                        "{evidence.snippet}"
-                                      </Typography>
-                                    </Paper>
-                                  ))}
-                                </Stack>
-                              </Box>
+                              <EvidenceAccordion 
+                                evidence={finding.evidence_details} 
+                                defaultExpanded={false}
+                                prominent={true}
+                              />
                             ) : (
-                              <Accordion sx={{ mt: 2, backgroundColor: 'rgba(255,255,255,0.7)' }}>
-                                <AccordionSummary expandIcon={<ExpandMore />}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                    <Visibility fontSize="small" />
-                                    <Typography variant="body2" fontWeight="medium">
-                                      View Evidence ({finding.evidence_details.length} {finding.evidence_details.length === 1 ? 'source' : 'sources'})
-                                    </Typography>
-                                  </Box>
-                                </AccordionSummary>
-                                <AccordionDetails>
-                                  <Stack spacing={1.5}>
-                                    {finding.evidence_details.map((evidence: any, idx: number) => (
-                                      <Box
-                                        key={idx}
-                                        sx={{
-                                          p: 2,
-                                          backgroundColor: 'background.paper',
-                                          borderRadius: 1,
-                                          border: '1px solid',
-                                          borderColor: 'divider',
-                                        }}
-                                      >
-                                        {evidence.document_name && (
-                                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                                            <Description fontSize="small" sx={{ mr: 0.5, verticalAlign: 'middle' }} />
-                                            {evidence.document_name} - Page {evidence.page}
-                                          </Typography>
-                                        )}
-                                        <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary' }}>
-                                          "{evidence.snippet}"
-                                        </Typography>
-                                      </Box>
-                                    ))}
-                                  </Stack>
-                                </AccordionDetails>
-                              </Accordion>
+                              <EvidenceAccordion 
+                                evidence={finding.evidence_details} 
+                                defaultExpanded={false}
+                                prominent={false}
+                              />
                             )}
                           </>
                         )}

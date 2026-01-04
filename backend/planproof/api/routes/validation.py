@@ -371,6 +371,18 @@ async def get_run_results(
     storage: StorageClient = Depends(get_storage_client),
     user: dict = Depends(get_current_user)
 ):
+    # Load rule catalog for descriptions
+    from planproof.pipeline.validate import load_rule_catalog
+    from pathlib import Path
+    
+    rule_catalog = {}
+    try:
+        catalog_path = Path("artefacts/rule_catalog.json")
+        if catalog_path.exists():
+            rules = load_rule_catalog(catalog_path)
+            rule_catalog = {rule.rule_id: rule for rule in rules}
+    except Exception as e:
+        print(f"Warning: Could not load rule catalog: {e}")
     """
     Get validation results for a specific run.
     
@@ -464,10 +476,21 @@ async def get_run_results(
                     })
                 evidence_details = formatted_details
 
+            rule_id_str = check.rule_id_string or str(check.rule_id)
+            
+            # Get rule info from catalog
+            rule_title = rule_id_str
+            rule_description = None
+            if rule_id_str in rule_catalog:
+                catalog_rule = rule_catalog[rule_id_str]
+                rule_title = catalog_rule.title
+                rule_description = catalog_rule.description
+            
             findings.append({
                 "id": check.id,
-                "rule_id": check.rule_id_string or str(check.rule_id),
-                "title": check.rule_id_string or str(check.rule_id),
+                "rule_id": rule_id_str,
+                "title": rule_title,
+                "description": rule_description,
                 "status": status_str,
                 "severity": severity or "info",
                 "message": check.explanation or "",
