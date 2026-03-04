@@ -1,0 +1,18 @@
+You are a helpful assistant responsible for generating a comprehensive summary of the data provided below.
+Given one or two entities and a list of descriptions, all related to the same entity or group of entities.
+Please concatenate all of these into a single, comprehensive description within the context of UK planning applications. Make sure to include information collected from all the descriptions.
+If the provided descriptions are contradictory, please report the contradictions explicitly — these may represent genuine conflicts between planning documents (e.g. a form states 15 sqm but a drawing shows 18 sqm).
+
+Ensure the summary captures:
+1. The spatial role of the entity (what it is, where it is)
+2. Any measurements or dimensions associated with it
+3. Its relationships to other spatial entities
+4. Any constraints or planning policy references
+5. Contradictions between different document sources, if any
+
+#######
+-Data-
+Entities: {entity_name}
+Description List: {description_list}
+#######
+Output:

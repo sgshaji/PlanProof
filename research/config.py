@@ -40,7 +40,7 @@ class ResearchConfig:
     output_dir: str = os.path.join(os.path.dirname(__file__), "output")
     ground_truth_dir: str = os.path.join(os.path.dirname(__file__), "ground_truth")
 
-    # Azure OpenAI (for synthetic data generation)
+    # Azure OpenAI (for synthetic data generation and GraphRAG)
     azure_openai_endpoint: str = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
     azure_openai_api_key: str = os.environ.get("AZURE_OPENAI_API_KEY", "")
     azure_openai_api_version: str = os.environ.get(
@@ -48,6 +48,20 @@ class ResearchConfig:
     )
     azure_openai_chat_deployment: str = os.environ.get(
         "AZURE_OPENAI_CHAT_DEPLOYMENT", ""
+    )
+    azure_openai_embedding_deployment: str = os.environ.get(
+        "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", ""
+    )
+
+    # GraphRAG workspace
+    graphrag_workspace_path: str = os.path.join(
+        os.path.dirname(__file__), "graphrag_workspace"
+    )
+
+    # BCC sample data
+    bcc_data_path: str = os.path.join(
+        os.path.dirname(__file__), os.pardir,
+        "data", "BCC Sample applications", "BCC Sample applications",
     )
 
     def __post_init__(self):

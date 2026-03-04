@@ -17,6 +17,7 @@ class TestNodeType:
         expected = {
             "PlanningDocument", "Room", "Building", "Boundary",
             "Opening", "Page", "Claim", "Community",
+            "Measurement", "Constraint", "SiteFeature",
         }
         assert {nt.value for nt in NodeType} == expected
 
@@ -30,6 +31,7 @@ class TestEdgeType:
         expected = {
             "CONTAINS", "ADJACENT_TO", "OPENS_INTO",
             "EXTRACTED_FROM", "IN_COMMUNITY", "CONTRADICTS",
+            "HAS_MEASUREMENT", "BOUNDS",
         }
         assert {et.value for et in EdgeType} == expected
 

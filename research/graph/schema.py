@@ -20,6 +20,9 @@ class NodeType(str, Enum):
     PAGE = "Page"
     CLAIM = "Claim"
     COMMUNITY = "Community"
+    MEASUREMENT = "Measurement"
+    CONSTRAINT = "Constraint"
+    SITE_FEATURE = "SiteFeature"
 
 
 class EdgeType(str, Enum):
@@ -31,6 +34,8 @@ class EdgeType(str, Enum):
     EXTRACTED_FROM = "EXTRACTED_FROM"
     IN_COMMUNITY = "IN_COMMUNITY"
     CONTRADICTS = "CONTRADICTS"
+    HAS_MEASUREMENT = "HAS_MEASUREMENT"
+    BOUNDS = "BOUNDS"
 
 
 @dataclass

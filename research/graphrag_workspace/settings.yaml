@@ -1,0 +1,72 @@
+# GraphRAG Settings for PlanProof Planning Document Analysis
+# Reference: https://microsoft.github.io/graphrag/config/yaml/
+
+# LLM configuration — uses Azure OpenAI via environment variables
+llm:
+  type: azure_openai_chat
+  api_key: ${AZURE_OPENAI_API_KEY}
+  api_base: ${AZURE_OPENAI_ENDPOINT}
+  api_version: ${AZURE_OPENAI_API_VERSION}
+  deployment_name: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
+  model: gpt-4o
+  max_retries: 3
+  tokens_per_minute: 80000
+  requests_per_minute: 48
+
+# Embedding configuration
+embeddings:
+  llm:
+    type: azure_openai_embedding
+    api_key: ${AZURE_OPENAI_API_KEY}
+    api_base: ${AZURE_OPENAI_ENDPOINT}
+    api_version: ${AZURE_OPENAI_API_VERSION}
+    deployment_name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+    model: text-embedding-3-small
+
+# Input: plain text files extracted from planning PDFs
+input:
+  type: file
+  file_type: text
+  base_dir: input
+
+# Chunking: ~300 tokens per chunk for fine-grained entity extraction
+chunks:
+  size: 300
+  overlap: 100
+
+# Entity extraction: use our custom planning-domain prompt
+entity_extraction:
+  prompt: prompts/entity_extraction.txt
+  max_gleanings: 1
+  entity_types:
+    - Room
+    - Building
+    - Boundary
+    - Opening
+    - Measurement
+    - Constraint
+    - SiteFeature
+
+# Community detection via Leiden algorithm
+cluster_graph:
+  max_cluster_size: 10
+
+# Community report summarisation
+summarize_descriptions:
+  prompt: prompts/summarize_descriptions.txt
+  max_length: 500
+
+# Output: Parquet files for downstream SN-KG construction
+storage:
+  type: file
+  base_dir: output
+
+# Reporting
+reporting:
+  type: file
+  base_dir: output/reports
+
+# Cache
+cache:
+  type: file
+  base_dir: cache

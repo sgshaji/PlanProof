@@ -1,0 +1,82 @@
+-Goal-
+Given a text document from a UK planning application, identify all spatial entities and the relationships between them.
+
+Planning documents describe proposed building works — extensions, new dwellings, conversions — and contain spatial information about rooms, buildings, boundaries, openings, measurements, constraints, and site features. Your task is to extract these as structured entities and relationships.
+
+-Steps-
+1. Identify all entities. For each identified entity, extract the following information:
+- entity_name: Name of the entity, capitalised
+- entity_type: One of the following types: [Room, Building, Boundary, Opening, Measurement, Constraint, SiteFeature]
+- entity_description: Comprehensive description of the entity's attributes and activities
+
+Entity type definitions:
+- Room: Any internal space — kitchen, bedroom, bathroom, lounge, hallway, utility, garage, loft, dormer, conservatory, extension rooms. Include dimensions if stated.
+- Building: A whole structure — dwelling, house, property, annexe, outbuilding. Include height, footprint, storeys if stated.
+- Boundary: Site perimeter elements — fences, walls, hedges, party walls, retaining walls. Include heights and materials if stated.
+- Opening: Doors, windows, gates, rooflights, velux. Include dimensions, type (e.g. casement, sliding), and which rooms/spaces they connect.
+- Measurement: Any stated dimension — area (sqm), height (m), width (m), length (m), distance (m), depth (m). Always include the numeric value and unit.
+- Constraint: Planning rules, policies, or limits — maximum height, minimum boundary distance, permitted development rights, conservation area restrictions, flood zone.
+- SiteFeature: External features — driveway, garden, parking, trees, landscaping, access road, pavement, drainage, septic tank.
+
+2. From the entities identified in step 1, identify all pairs of entities that are *clearly related* to each other.
+For each pair of related entities, extract the following information:
+- source_entity: name of the source entity
+- target_entity: name of the target entity
+- relationship_description: explanation of why the entities are related
+- relationship_strength: an integer score between 1 and 10 indicating the strength of the relationship
+- relationship_type: One of the following types: [CONTAINS, ADJACENT_TO, OPENS_INTO, HAS_MEASUREMENT, BOUNDS, SERVES, OVERLOOKS, ACCESSES]
+
+Relationship type definitions:
+- CONTAINS: Hierarchical containment — a building contains rooms, a site contains buildings
+- ADJACENT_TO: Spatial adjacency — rooms sharing a wall, buildings next to each other
+- OPENS_INTO: An opening (door/window) connects two spaces
+- HAS_MEASUREMENT: An entity has a specific measurement (area, height, width, distance)
+- BOUNDS: A boundary element defines the edge of a site or property
+- SERVES: A feature serves a function for another entity (e.g. driveway serves dwelling)
+- OVERLOOKS: A window or opening overlooks a space or neighbour
+- ACCESSES: An entry point provides access to a space
+
+3. Return output in English as a single list of all the entities and relationships identified in steps 1 and 2. Use **{record_delimiter}** to separate each entity or relationship.
+
+4. When finished, output {completion_delimiter}
+
+######################
+-Examples-
+######################
+Example 1:
+Text:
+The proposed rear extension measures 4m in depth and 6m in width. It will contain a new kitchen (15 sqm) and utility room (8 sqm). The kitchen will have bi-fold doors opening onto the rear garden. The extension will be set back 2m from the northern boundary fence which is 1.8m high.
+
+Output:
+("entity"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"Building"{tuple_delimiter}"Proposed rear extension measuring 4m depth and 6m width"){record_delimiter}
+("entity"{tuple_delimiter}"KITCHEN"{tuple_delimiter}"Room"{tuple_delimiter}"New kitchen with area of 15 sqm, located within the rear extension"){record_delimiter}
+("entity"{tuple_delimiter}"UTILITY ROOM"{tuple_delimiter}"Room"{tuple_delimiter}"Utility room with area of 8 sqm, located within the rear extension"){record_delimiter}
+("entity"{tuple_delimiter}"BI-FOLD DOORS"{tuple_delimiter}"Opening"{tuple_delimiter}"Bi-fold doors connecting kitchen to rear garden"){record_delimiter}
+("entity"{tuple_delimiter}"REAR GARDEN"{tuple_delimiter}"SiteFeature"{tuple_delimiter}"Garden at the rear of the property"){record_delimiter}
+("entity"{tuple_delimiter}"NORTHERN BOUNDARY FENCE"{tuple_delimiter}"Boundary"{tuple_delimiter}"Fence on the northern boundary, 1.8m high"){record_delimiter}
+("entity"{tuple_delimiter}"KITCHEN AREA"{tuple_delimiter}"Measurement"{tuple_delimiter}"Kitchen area measurement: 15 sqm"){record_delimiter}
+("entity"{tuple_delimiter}"UTILITY ROOM AREA"{tuple_delimiter}"Measurement"{tuple_delimiter}"Utility room area measurement: 8 sqm"){record_delimiter}
+("entity"{tuple_delimiter}"EXTENSION DEPTH"{tuple_delimiter}"Measurement"{tuple_delimiter}"Rear extension depth: 4m"){record_delimiter}
+("entity"{tuple_delimiter}"EXTENSION WIDTH"{tuple_delimiter}"Measurement"{tuple_delimiter}"Rear extension width: 6m"){record_delimiter}
+("entity"{tuple_delimiter}"BOUNDARY SETBACK"{tuple_delimiter}"Measurement"{tuple_delimiter}"Distance from extension to northern boundary: 2m"){record_delimiter}
+("entity"{tuple_delimiter}"FENCE HEIGHT"{tuple_delimiter}"Measurement"{tuple_delimiter}"Northern boundary fence height: 1.8m"){record_delimiter}
+("relationship"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"KITCHEN"{tuple_delimiter}"The rear extension contains the new kitchen"{tuple_delimiter}9{tuple_delimiter}"CONTAINS"){record_delimiter}
+("relationship"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"UTILITY ROOM"{tuple_delimiter}"The rear extension contains the utility room"{tuple_delimiter}9{tuple_delimiter}"CONTAINS"){record_delimiter}
+("relationship"{tuple_delimiter}"KITCHEN"{tuple_delimiter}"UTILITY ROOM"{tuple_delimiter}"Kitchen and utility room are adjacent within the extension"{tuple_delimiter}6{tuple_delimiter}"ADJACENT_TO"){record_delimiter}
+("relationship"{tuple_delimiter}"BI-FOLD DOORS"{tuple_delimiter}"KITCHEN"{tuple_delimiter}"Bi-fold doors open from the kitchen"{tuple_delimiter}8{tuple_delimiter}"OPENS_INTO"){record_delimiter}
+("relationship"{tuple_delimiter}"BI-FOLD DOORS"{tuple_delimiter}"REAR GARDEN"{tuple_delimiter}"Bi-fold doors open onto the rear garden"{tuple_delimiter}8{tuple_delimiter}"OPENS_INTO"){record_delimiter}
+("relationship"{tuple_delimiter}"KITCHEN"{tuple_delimiter}"KITCHEN AREA"{tuple_delimiter}"Kitchen has a measured area of 15 sqm"{tuple_delimiter}10{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"UTILITY ROOM"{tuple_delimiter}"UTILITY ROOM AREA"{tuple_delimiter}"Utility room has a measured area of 8 sqm"{tuple_delimiter}10{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"EXTENSION DEPTH"{tuple_delimiter}"Extension has a depth of 4m"{tuple_delimiter}10{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"EXTENSION WIDTH"{tuple_delimiter}"Extension has a width of 6m"{tuple_delimiter}10{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"NORTHERN BOUNDARY FENCE"{tuple_delimiter}"FENCE HEIGHT"{tuple_delimiter}"Boundary fence height is 1.8m"{tuple_delimiter}10{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"BOUNDARY SETBACK"{tuple_delimiter}"Extension is set back 2m from the northern boundary"{tuple_delimiter}9{tuple_delimiter}"HAS_MEASUREMENT"){record_delimiter}
+("relationship"{tuple_delimiter}"NORTHERN BOUNDARY FENCE"{tuple_delimiter}"REAR EXTENSION"{tuple_delimiter}"Northern boundary fence bounds the extension to the north"{tuple_delimiter}7{tuple_delimiter}"BOUNDS"){record_delimiter}
+{completion_delimiter}
+
+######################
+-Real Data-
+######################
+Text: {input_text}
+######################
+Output:
