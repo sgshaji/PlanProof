@@ -21,10 +21,10 @@ DEFAULT_WORKSPACE = (
 )
 
 REQUIRED_ENV_VARS = [
-    "AZURE_OPENAI_API_KEY",
-    "AZURE_OPENAI_ENDPOINT",
-    "AZURE_OPENAI_CHAT_DEPLOYMENT",
-    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT",
+    "GRAPHRAG_API_KEY",
+    "GRAPHRAG_API_BASE",
+    "GRAPHRAG_CHAT_DEPLOYMENT",
+    "GRAPHRAG_EMBEDDING_DEPLOYMENT",
 ]
 
 
@@ -72,6 +72,10 @@ def run_index(workspace: Path, verbose: bool = False) -> int:
 
 
 def main():
+    # Load .env from project root
+    from research.config import ResearchConfig
+    ResearchConfig()
+
     parser = argparse.ArgumentParser(
         description="Run GraphRAG indexing on planning documents."
     )

@@ -40,6 +40,7 @@ def add_contradicts_edges(
             "edge_type": EdgeType.CONTRADICTS.value,
             "conflict_id": conflict.conflict_id,
             "conflict_type": conflict.conflict_type,
+            "field_name": conflict.field_name,
             "discrepancy": conflict.discrepancy,
             "discrepancy_pct": conflict.discrepancy_pct,
             "severity": conflict.severity,

@@ -11,7 +11,7 @@ Methodology:
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from research.config import ResearchConfig
 from research.graph.builder import SNKGBuilder
@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 def run_conflict_detection_experiment(
-    submission_ids: list[int],
-    ground_truths: dict[int, GroundTruthAnnotation],
+    submission_ids: list[Union[int, str]],
+    ground_truths: dict[Union[int, str], GroundTruthAnnotation],
     config: Optional[ResearchConfig] = None,
 ) -> dict:
     """Run the conflict detection experiment.
@@ -53,10 +53,10 @@ def run_conflict_detection_experiment(
     for sid in submission_ids:
         gt = ground_truths.get(sid)
         if gt is None:
-            logger.warning("No ground truth for submission %d, skipping", sid)
+            logger.warning("No ground truth for submission %s, skipping", sid)
             continue
 
-        logger.info("Processing submission %d", sid)
+        logger.info("Processing submission %s", sid)
         G = builder.build_for_submission(sid)
 
         # Detect conflicts

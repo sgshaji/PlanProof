@@ -11,10 +11,9 @@ Methodology:
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from research.config import ResearchConfig
-from research.db_reader import DBReader
 from research.graph.builder import SNKGBuilder
 from research.community.leiden import run_leiden
 from research.conflict.detector import detect_conflicts
@@ -26,9 +25,9 @@ logger = logging.getLogger(__name__)
 
 
 def run_flat_vs_graph_experiment(
-    submission_ids: list[int],
-    ground_truths: dict[int, GroundTruthAnnotation],
-    flat_results_by_submission: dict[int, list[dict]],
+    submission_ids: list[Union[int, str]],
+    ground_truths: dict[Union[int, str], GroundTruthAnnotation],
+    flat_results_by_submission: dict[Union[int, str], list[dict]],
     config: Optional[ResearchConfig] = None,
 ) -> dict:
     """Run the flat vs graph comparison experiment.

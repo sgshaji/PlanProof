@@ -158,3 +158,12 @@ credentials.json
 *.backup
 *.old
 backend/.env
+
+# Research - generated data & outputs
+research/graphrag_workspace/input/
+research/graphrag_workspace/output/
+research/graphrag_workspace/cache/
+research/graphrag_workspace/lancedb/
+research/output/
+research/graph/builder_new.py
+data/

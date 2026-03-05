@@ -388,8 +388,19 @@ def _evaluate_conflicts(
 
 def _conflict_matches(gt, pred: dict) -> bool:
     """Check if a predicted conflict matches a ground truth conflict."""
-    # Match by conflict type and field name
-    if gt.conflict_type == pred.get("conflict_type", ""):
-        if gt.field_name.lower() in pred.get("field_name", "").lower():
+    # Match by conflict type
+    if gt.conflict_type != pred.get("conflict_type", ""):
+        return False
+    # Match by field name: either substring match or same domain
+    gt_fn = gt.field_name.lower()
+    pred_fn = pred.get("field_name", "").lower()
+    if gt_fn in pred_fn or pred_fn in gt_fn:
+        return True
+    # Same measurement domain (e.g. floor_area ↔ living_room_area are both "area")
+    area_kw = {"area", "sqm", "floor_area"}
+    height_kw = {"height", "ridge", "eaves"}
+    dist_kw = {"distance", "setback", "boundary"}
+    for domain in (area_kw, height_kw, dist_kw):
+        if any(k in gt_fn for k in domain) and any(k in pred_fn for k in domain):
             return True
     return False

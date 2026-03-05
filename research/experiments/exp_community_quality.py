@@ -12,7 +12,7 @@ Methodology:
 
 import json
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from research.config import ResearchConfig
 from research.graph.builder import SNKGBuilder
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def run_community_quality_experiment(
-    submission_ids: list[int],
+    submission_ids: list[Union[int, str]],
     config: Optional[ResearchConfig] = None,
 ) -> dict:
     """Run the community quality experiment.
@@ -45,7 +45,7 @@ def run_community_quality_experiment(
     }
 
     for sid in submission_ids:
-        logger.info("Processing submission %d", sid)
+        logger.info("Processing submission %s", sid)
         G = builder.build_for_submission(sid)
         summary = graph_summary(G)
 

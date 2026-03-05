@@ -8,7 +8,7 @@ import json
 import os
 import logging
 from dataclasses import dataclass, field, asdict
-from typing import Optional
+from typing import Optional, Union
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class GroundTruthConflict:
 class GroundTruthAnnotation:
     """Complete ground truth annotation for a submission."""
 
-    submission_id: int
+    submission_id: Union[int, str]
     annotator: str
     annotation_date: str
     is_synthetic: bool = False

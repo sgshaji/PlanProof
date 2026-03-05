@@ -122,8 +122,66 @@ def detect_conflicts(
                 conflict.conflict_type = _classify_conflict_type(fn_a)
                 conflicts.append(conflict)
 
-    logger.info("Detected %d conflicts in graph", len(conflicts))
+    # Deduplicate: keep only the highest-discrepancy conflict per field_name
+    conflicts = deduplicate_conflicts(conflicts)
+
+    logger.info("Detected %d conflicts in graph (after dedup)", len(conflicts))
     return conflicts
+
+
+def deduplicate_conflicts(conflicts: list[Conflict]) -> list[Conflict]:
+    """Keep only the most significant conflict per field_name.
+
+    When a measurement entity has N distinct values, the pairwise
+    comparison produces C(N,2) conflicts.  Only the pair with
+    the largest percentage discrepancy is meaningful — it represents
+    the worst-case inconsistency for that field.
+
+    Also groups semantically equivalent field names (e.g.
+    bathroom_area vs bathroom_dimensions) by their base entity
+    and conflict type, keeping one winner per group.
+    """
+    if not conflicts:
+        return []
+
+    # Group by (base_entity, conflict_type) to collapse related fields
+    groups: dict[tuple[str, str], list[Conflict]] = {}
+    for c in conflicts:
+        key = (_base_entity_name(c.field_name), c.conflict_type)
+        groups.setdefault(key, []).append(c)
+
+    deduped: list[Conflict] = []
+    counter = 0
+    for _key, group in groups.items():
+        # Pick the conflict with the highest percentage discrepancy
+        best = max(
+            group,
+            key=lambda c: c.discrepancy_pct if c.discrepancy_pct is not None else 0.0,
+        )
+        counter += 1
+        best.conflict_id = f"conflict_{counter}"
+        deduped.append(best)
+
+    return deduped
+
+
+def _base_entity_name(field_name: str) -> str:
+    """Extract the base entity name, stripping measurement suffixes.
+
+    E.g. "bathroom_area" → "bathroom", "bedroom_1_height" → "bedroom_1",
+    "ridge_height" → "ridge", "living_room_area" → "living_room".
+    """
+    suffixes = (
+        "_area", "_height", "_width", "_depth", "_length",
+        "_distance", "_dimensions", "_setback", "_separation",
+        "_sqm", "_value",
+    )
+    fn = field_name.lower()
+    for suffix in suffixes:
+        if fn.endswith(suffix):
+            fn = fn[: -len(suffix)]
+            break
+    return fn
 
 
 def _compare_values(

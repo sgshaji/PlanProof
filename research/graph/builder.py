@@ -1,8 +1,9 @@
 """SN-KG (Spatial Narrative Knowledge Graph) builders.
 
-Two builders:
+Three builders:
   - GraphRAGSNKGBuilder: Reads GraphRAG Parquet output (primary, for research pipeline)
   - DBSNKGBuilder: Reads Stage 3 database outputs (legacy, for production pipeline)
+  - SNKGBuilder: Unified builder that works per-application using GraphRAG output
 """
 
 import re
@@ -53,6 +54,8 @@ GRAPHRAG_EDGE_TYPE_MAP: dict[str, EdgeType] = {
 MEASUREMENT_PATTERNS = [
     # "15 sqm", "18.5 sq m", "22.5 m²", "10 m2"
     r"(\d+\.?\d*)\s*(sqm|sq\s*m|m²|m2)",
+    # "450 square metres", "22 square meters"
+    r"(\d+\.?\d*)\s*(square\s*metres?|square\s*meters?)",
     # "4.5m", "2.1 m", "8.5 metres"
     r"(\d+\.?\d*)\s*(m|metres?|meters?)\b",
     # "4m x 3.7m" — captures first dimension
@@ -134,19 +137,45 @@ class GraphRAGSNKGBuilder:
 
         Returns {text_unit_id: source_type} where source_type is
         inferred from the filename (e.g. "form", "statement", "drawing").
+        Also populates self._doc_title_map {doc_hash: doc_title} and
+        self._tu_doc_map {text_unit_id: doc_title} for app subgraph extraction.
         """
+        import pandas as pd
+
         source_map: dict[str, str] = {}
+        self._doc_title_map: dict[str, str] = {}
+        self._tu_doc_map: dict[str, str] = {}
+
+        # Load documents.parquet to resolve doc_id hashes to filenames
+        docs_df = self._load_parquet("documents")
+        if not docs_df.empty:
+            for _, doc_row in docs_df.iterrows():
+                doc_id = str(doc_row.get("id", ""))
+                doc_title = str(doc_row.get("title", ""))
+                self._doc_title_map[doc_id] = doc_title
+
         if text_units_df.empty:
             return source_map
 
         for _, row in text_units_df.iterrows():
             tu_id = str(row.get("id", ""))
-            doc_ids = row.get("document_ids", [])
-            if not doc_ids:
+            # GraphRAG v3 uses 'document_id' (singular, hash string)
+            doc_id = row.get("document_id", row.get("document_ids", ""))
+            if doc_id is None:
                 continue
-            # Document ID is typically the filename
-            doc_id = str(doc_ids[0]) if isinstance(doc_ids, list) else str(doc_ids)
-            source_type = self._classify_source_type(doc_id)
+            import numpy as np
+            if isinstance(doc_id, np.ndarray):
+                doc_id = doc_id.tolist()
+            if isinstance(doc_id, (list,)):
+                doc_id = str(doc_id[0]) if doc_id else ""
+            elif isinstance(doc_id, str) and not doc_id:
+                continue
+            else:
+                doc_id = str(doc_id)
+            # Resolve hash to filename via documents.parquet
+            doc_title = self._doc_title_map.get(doc_id, doc_id)
+            self._tu_doc_map[tu_id] = doc_title
+            source_type = self._classify_source_type(doc_title)
             source_map[tu_id] = source_type
 
         return source_map
@@ -175,7 +204,8 @@ class GraphRAGSNKGBuilder:
 
         for _, row in entities_df.iterrows():
             graphrag_id = str(row.get("id", ""))
-            name = str(row.get("name", "")).strip()
+            # GraphRAG v3 uses 'title' instead of 'name'
+            name = str(row.get("title", row.get("name", ""))).strip()
             entity_type_str = str(row.get("type", "")).strip().lower()
             description = str(row.get("description", ""))
 
@@ -195,6 +225,7 @@ class GraphRAGSNKGBuilder:
 
             # Determine source document
             source = self._get_entity_source(row, doc_source_map)
+            doc_titles = self._get_entity_doc_titles(row)
 
             node = GraphNode(
                 node_id=node_id,
@@ -204,6 +235,7 @@ class GraphRAGSNKGBuilder:
                     "graphrag_id": graphrag_id,
                     "description": description,
                     "source": source,
+                    "doc_titles": doc_titles,
                 },
             )
             G.add_node(node_id, **node.to_nx_attrs())
@@ -220,7 +252,7 @@ class GraphRAGSNKGBuilder:
         for _, row in relationships_df.iterrows():
             source_name = str(row.get("source", "")).strip()
             target_name = str(row.get("target", "")).strip()
-            rel_type_str = str(row.get("type", "")).strip().lower()
+            rel_type_str = str(row.get("type", "")).strip().lower() if "type" in relationships_df.columns else ""
             description = str(row.get("description", ""))
             weight = row.get("weight", 1.0)
 
@@ -231,7 +263,10 @@ class GraphRAGSNKGBuilder:
             if not source_id or not target_id:
                 continue
 
-            edge_type = GRAPHRAG_EDGE_TYPE_MAP.get(rel_type_str, EdgeType.CONTAINS)
+            # First try explicit type mapping, then infer from description
+            edge_type = GRAPHRAG_EDGE_TYPE_MAP.get(rel_type_str) if rel_type_str else None
+            if edge_type is None:
+                edge_type = self._classify_edge_type(description, G, source_id, target_id)
 
             edge = GraphEdge(
                 source_id=source_id,
@@ -263,31 +298,47 @@ class GraphRAGSNKGBuilder:
 
         for _, row in measurement_entities.iterrows():
             graphrag_id = str(row.get("id", ""))
-            name = str(row.get("name", "")).strip()
+            # GraphRAG v3 uses 'title' instead of 'name'
+            name = str(row.get("title", row.get("name", ""))).strip()
             description = str(row.get("description", ""))
             source = self._get_entity_source(row, doc_source_map)
+            doc_titles = self._get_entity_doc_titles(row)
 
-            # Parse measurement from description
-            value, unit = parse_measurement(description)
             field_name = classify_field_name(name)
 
-            claim_id = self._next_id("claim")
-            entity_id_map[graphrag_id] = claim_id
+            # Extract ALL distinct measurements from the description.
+            # GraphRAG entity descriptions often merge values from multiple
+            # documents, e.g. "17 m² ... 47.97 m²".  Creating one Claim per
+            # value lets the conflict detector surface discrepancies.
+            all_values = parse_all_measurements(description)
 
-            node = GraphNode(
-                node_id=claim_id,
-                node_type=NodeType.CLAIM,
-                label=f"{name}: {value} {unit}" if value else name,
-                properties={
-                    "graphrag_id": graphrag_id,
-                    "field_name": field_name,
-                    "field_value": str(value) if value is not None else "",
-                    "field_unit": unit or "",
-                    "source": source,
-                    "description": description,
-                },
-            )
-            G.add_node(claim_id, **node.to_nx_attrs())
+            if not all_values:
+                # No parseable value — still create a Claim so the entity
+                # is represented (field_value will be empty).
+                all_values = [(None, None)]
+
+            first_claim_id = None
+            for value, unit in all_values:
+                claim_id = self._next_id("claim")
+                if first_claim_id is None:
+                    first_claim_id = claim_id
+                    entity_id_map[graphrag_id] = claim_id
+
+                node = GraphNode(
+                    node_id=claim_id,
+                    node_type=NodeType.CLAIM,
+                    label=f"{name}: {value} {unit}" if value else name,
+                    properties={
+                        "graphrag_id": graphrag_id,
+                        "field_name": field_name,
+                        "field_value": str(value) if value is not None else "",
+                        "field_unit": unit or "",
+                        "source": source,
+                        "doc_titles": doc_titles,
+                        "description": description,
+                    },
+                )
+                G.add_node(claim_id, **node.to_nx_attrs())
 
     def _add_community_data(self, G: nx.DiGraph, entity_id_map: dict):
         """Add community assignments from GraphRAG's Leiden output."""
@@ -314,21 +365,85 @@ class GraphRAGSNKGBuilder:
             )
             G.add_node(comm_node_id, **node.to_nx_attrs())
 
+            # Link entities in this community
+            entity_ids_col = row.get("entity_ids", [])
+            if entity_ids_col is not None:
+                import numpy as np
+                if isinstance(entity_ids_col, np.ndarray):
+                    entity_ids_col = entity_ids_col.tolist()
+                if isinstance(entity_ids_col, str):
+                    entity_ids_col = [entity_ids_col]
+                for eid in entity_ids_col:
+                    snkg_id = entity_id_map.get(str(eid))
+                    if snkg_id and snkg_id in G.nodes:
+                        edge = GraphEdge(
+                            snkg_id, comm_node_id, EdgeType.IN_COMMUNITY,
+                            properties={"community_id": community_id},
+                        )
+                        G.add_edge(snkg_id, comm_node_id, **edge.to_nx_attrs())
+
+    def _get_entity_doc_titles(self, row) -> list[str]:
+        """Get the source document title(s) for an entity via text_unit → doc mapping."""
+        text_unit_ids = row.get("text_unit_ids", [])
+        if text_unit_ids is None:
+            return []
+        import numpy as np
+        if isinstance(text_unit_ids, np.ndarray):
+            text_unit_ids = text_unit_ids.tolist()
+        if isinstance(text_unit_ids, str):
+            text_unit_ids = [text_unit_ids]
+        if not text_unit_ids:
+            return []
+        titles = set()
+        tu_doc_map = getattr(self, "_tu_doc_map", {})
+        for tu_id in text_unit_ids:
+            title = tu_doc_map.get(str(tu_id))
+            if title:
+                titles.add(title)
+        return list(titles)
+
     def _classify_entity_by_name(self, name: str) -> NodeType:
-        """Classify entity type from its name using keyword matching."""
+        """Classify an entity type from its name using keyword matching."""
         name_lower = name.lower()
         for keyword, node_type in ENTITY_NODE_TYPES.items():
             if keyword in name_lower:
                 return node_type
         return NodeType.BUILDING  # Default for unclassified
 
+    def _classify_edge_type(
+        self, description: str, G: nx.DiGraph,
+        source_id: str, target_id: str,
+    ) -> EdgeType:
+        """Infer edge type from relationship description and node types."""
+        desc_lower = description.lower()
+        # Check description keywords
+        if any(w in desc_lower for w in ("adjacent", "next to", "neighbour", "neighbor", "border")):
+            return EdgeType.ADJACENT_TO
+        if any(w in desc_lower for w in ("opens into", "door", "access", "entry", "entrance")):
+            return EdgeType.OPENS_INTO
+        if any(w in desc_lower for w in ("measurement", "dimension", "distance", "area", "height", "width", "depth")):
+            return EdgeType.HAS_MEASUREMENT
+        if any(w in desc_lower for w in ("bound", "fence", "wall", "hedge")):
+            return EdgeType.BOUNDS
+        if any(w in desc_lower for w in ("extract", "document", "source", "evidence")):
+            return EdgeType.EXTRACTED_FROM
+        # Check if target is inside source (containment)
+        if any(w in desc_lower for w in ("contains", "part of", "within", "inside", "located", "house")):
+            return EdgeType.CONTAINS
+        return EdgeType.CONTAINS  # Default
+
     def _get_entity_source(self, row, doc_source_map: dict) -> str:
         """Get the source document type for an entity."""
         text_unit_ids = row.get("text_unit_ids", [])
-        if not text_unit_ids:
+        if text_unit_ids is None:
             return "unknown"
+        import numpy as np
+        if isinstance(text_unit_ids, np.ndarray):
+            text_unit_ids = text_unit_ids.tolist()
         if isinstance(text_unit_ids, str):
             text_unit_ids = [text_unit_ids]
+        if not text_unit_ids:
+            return "unknown"
         for tu_id in text_unit_ids:
             source = doc_source_map.get(str(tu_id))
             if source:
@@ -361,7 +476,7 @@ def parse_measurement(description: str) -> tuple[Optional[float], Optional[str]]
                 value = float(match.group(1))
                 unit = match.group(2).strip().lower()
                 # Normalise units
-                if unit in ("sq m", "m²", "m2"):
+                if unit in ("sq m", "m²", "m2") or "square" in unit:
                     unit = "sqm"
                 if unit in ("metres", "meters", "metre", "meter"):
                     unit = "m"
@@ -370,6 +485,42 @@ def parse_measurement(description: str) -> tuple[Optional[float], Optional[str]]
                 continue
 
     return None, None
+
+
+def _normalise_unit(unit: str) -> str:
+    """Normalise a measurement unit string."""
+    u = unit.strip().lower()
+    if u in ("sq m", "m²", "m2") or "square" in u:
+        return "sqm"
+    if u in ("metres", "meters", "metre", "meter"):
+        return "m"
+    return u
+
+
+def parse_all_measurements(description: str) -> list[tuple[float, str]]:
+    """Extract ALL distinct (value, unit) pairs from a description.
+
+    Unlike parse_measurement which returns only the first match,
+    this finds every numeric measurement. Useful when GraphRAG
+    descriptions contain conflicting values from different documents.
+
+    Returns a list of (value, unit) tuples, deduplicated by value.
+    """
+    if not description:
+        return []
+
+    results: dict[float, str] = {}  # value -> unit (dedup by value)
+    for pattern in MEASUREMENT_PATTERNS:
+        for match in re.finditer(pattern, description, re.IGNORECASE):
+            try:
+                value = float(match.group(1))
+                unit = _normalise_unit(match.group(2))
+                if value not in results:
+                    results[value] = unit
+            except (ValueError, IndexError):
+                continue
+
+    return [(v, u) for v, u in results.items()]
 
 
 def classify_field_name(entity_name: str) -> str:
@@ -640,3 +791,109 @@ class DBSNKGBuilder:
         if "extension" in ft or "room" in ft or "balcony" in ft:
             return NodeType.ROOM
         return NodeType.BUILDING
+
+
+# --- Unified builder (works with GraphRAG output, per-application) ---
+
+class SNKGBuilder:
+    """Unified SN-KG builder that works per-application from GraphRAG output.
+
+    This is the primary builder for the research pipeline. It wraps
+    GraphRAGSNKGBuilder to support per-application graphs and also
+    provides a local-storage-friendly interface (no DB required).
+
+    Usage:
+        builder = SNKGBuilder(config)
+        G = builder.build_for_submission(app_id)  # app_id = folder name e.g. "202506444PA"
+        # or
+        G = builder.build()  # build from default workspace
+    """
+
+    def __init__(self, config: Optional[ResearchConfig] = None):
+        self.config = config or ResearchConfig()
+        self._graphrag_builder = GraphRAGSNKGBuilder(self.config)
+
+    def build(self) -> nx.DiGraph:
+        """Build the SN-KG from the default GraphRAG workspace."""
+        return self._graphrag_builder.build()
+
+    def build_for_submission(self, submission_id) -> nx.DiGraph:
+        """Build the SN-KG for a specific submission/application.
+
+        If submission_id is a string (app folder name like "202506444PA"),
+        looks for a per-app GraphRAG workspace. If it's an int, tries the
+        local store first, then falls back to building from the combined graph.
+
+        Args:
+            submission_id: Application/submission identifier (int or str).
+
+        Returns:
+            NetworkX DiGraph for the submission.
+        """
+        app_id = str(submission_id)
+
+        # Check for per-application GraphRAG workspace
+        per_app_workspace = (
+            Path(self.config.graphrag_workspace_path).parent
+            / "graphrag_workspaces"
+            / app_id
+        )
+        if (per_app_workspace / "output").exists():
+            logger.info("Building SN-KG from per-app workspace: %s", per_app_workspace)
+            per_app_builder = GraphRAGSNKGBuilder(self.config)
+            per_app_builder.workspace = per_app_workspace
+            per_app_builder.output_dir = per_app_workspace / "output"
+            return per_app_builder.build()
+
+        # Check local store for cached graph
+        try:
+            from research.local_store import LocalStore
+            store = LocalStore(self.config)
+            cached = store.load_graph(app_id)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        # Fall back to building from the combined workspace
+        logger.info(
+            "No per-app workspace for %s; building from combined workspace", app_id
+        )
+        G = self._graphrag_builder.build()
+
+        # If the combined graph has source annotations, try to extract
+        # only nodes from this application
+        app_subgraph = self._extract_app_subgraph(G, app_id)
+        if app_subgraph.number_of_nodes() > 0:
+            return app_subgraph
+
+        return G
+
+    def _extract_app_subgraph(self, G: nx.DiGraph, app_id: str) -> nx.DiGraph:
+        """Extract nodes belonging to a specific application from a combined graph."""
+        app_nodes = []
+        app_id_lower = app_id.lower()
+        for nid, attrs in G.nodes(data=True):
+            # Primary check: doc_titles list contains filenames with the app ID
+            doc_titles = attrs.get("doc_titles", [])
+            if doc_titles and any(app_id_lower in str(t).lower() for t in doc_titles):
+                app_nodes.append(nid)
+                continue
+            # Fallback: check other text attributes
+            source = attrs.get("source", "")
+            description = attrs.get("description", "")
+            label = attrs.get("label", "")
+            if app_id_lower in f"{source} {description} {label}".lower():
+                app_nodes.append(nid)
+
+        if not app_nodes:
+            return nx.DiGraph()
+
+        # Include neighbors of identified nodes for connectivity
+        expanded = set(app_nodes)
+        for nid in app_nodes:
+            expanded.update(G.successors(nid))
+            expanded.update(G.predecessors(nid))
+
+        return G.subgraph(expanded).copy()
+

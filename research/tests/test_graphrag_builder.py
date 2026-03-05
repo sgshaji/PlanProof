@@ -10,6 +10,7 @@ import networkx as nx
 from research.graph.builder import (
     GraphRAGSNKGBuilder,
     parse_measurement,
+    parse_all_measurements,
     classify_field_name,
     GRAPHRAG_ENTITY_TYPE_MAP,
     GRAPHRAG_EDGE_TYPE_MAP,
@@ -61,6 +62,55 @@ class TestParseMeasurement:
         val, unit = parse_measurement("Area: 18.5 sqm, dimensions 5m x 3.7m")
         assert val == 18.5
         assert unit == "sqm"
+
+
+class TestParseAllMeasurements:
+    """Test multi-value extraction from descriptions."""
+
+    def test_single_value(self):
+        results = parse_all_measurements("Kitchen area: 15 sqm")
+        assert len(results) == 1
+        assert results[0] == (15.0, "sqm")
+
+    def test_conflicting_values(self):
+        desc = "One document states the size as 17 m², while another describes the size as 47.97 m²."
+        results = parse_all_measurements(desc)
+        values = {v for v, _ in results}
+        assert 17.0 in values
+        assert 47.97 in values
+
+    def test_three_values(self):
+        desc = "Measurements: 15 sqm from the form, 18.5 sqm from drawing, 11.62 sq m from survey."
+        results = parse_all_measurements(desc)
+        values = {v for v, _ in results}
+        assert 15.0 in values
+        assert 18.5 in values
+        assert 11.62 in values
+
+    def test_square_metres(self):
+        desc = "Total site area of 450 square metres"
+        results = parse_all_measurements(desc)
+        assert len(results) == 1
+        assert results[0] == (450.0, "sqm")
+
+    def test_dedup_same_value(self):
+        desc = "Both docs confirm 22.5 sqm area, measuring 22.5 sq m."
+        results = parse_all_measurements(desc)
+        values = [v for v, _ in results]
+        assert values.count(22.5) == 1
+
+    def test_empty(self):
+        assert parse_all_measurements("") == []
+
+    def test_no_measurements(self):
+        assert parse_all_measurements("Kitchen in the rear extension") == []
+
+    def test_mixed_units(self):
+        desc = "Ridge height 7.4 metres from one doc, 9.2 m from another"
+        results = parse_all_measurements(desc)
+        values = {v for v, _ in results}
+        assert 7.4 in values
+        assert 9.2 in values
 
 
 class TestClassifyFieldName:

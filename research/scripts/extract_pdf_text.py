@@ -96,6 +96,10 @@ def extract_pdfs(input_dir: Path, output_dir: Path) -> None:
 
 
 def main():
+    # Load .env from project root
+    from research.config import ResearchConfig
+    cfg = ResearchConfig()
+
     parser = argparse.ArgumentParser(
         description="Extract text from planning PDFs for GraphRAG indexing."
     )

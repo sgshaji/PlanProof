@@ -1,0 +1,136 @@
+{
+  "submission_id": "202506444PA",
+  "annotator": "manual",
+  "annotation_date": "2026-03-05",
+  "is_synthetic": false,
+  "source": "manual",
+  "entities": [
+    {
+      "entity_id": "room_living_dining",
+      "entity_type": "Room",
+      "label": "Living/Dining Room",
+      "properties": {"area": 21.47, "floor": "ground"},
+      "match_key": "living"
+    },
+    {
+      "entity_id": "room_kitchen",
+      "entity_type": "Room",
+      "label": "Kitchen",
+      "properties": {"area": 11.82, "floor": "ground"},
+      "match_key": "kitchen"
+    },
+    {
+      "entity_id": "room_utility",
+      "entity_type": "Room",
+      "label": "Utility Room",
+      "properties": {"area": 5.57, "floor": "ground"},
+      "match_key": "utility"
+    },
+    {
+      "entity_id": "room_porch",
+      "entity_type": "Room",
+      "label": "Porch",
+      "properties": {"area": 3.76, "floor": "ground"},
+      "match_key": "porch"
+    },
+    {
+      "entity_id": "room_bedroom1",
+      "entity_type": "Room",
+      "label": "Bedroom 1",
+      "properties": {"area": 12.43, "floor": "first"},
+      "match_key": "bedroom_1"
+    },
+    {
+      "entity_id": "room_bedroom2",
+      "entity_type": "Room",
+      "label": "Bedroom 2",
+      "properties": {"area": 12.08, "floor": "first"},
+      "match_key": "bedroom_2"
+    },
+    {
+      "entity_id": "room_bedroom3",
+      "entity_type": "Room",
+      "label": "Bedroom 3",
+      "properties": {"area": 8.54, "floor": "first"},
+      "match_key": "bedroom_3"
+    },
+    {
+      "entity_id": "room_living_proposed",
+      "entity_type": "Room",
+      "label": "Living Room (Proposed)",
+      "properties": {"area": 17.0, "floor": "ground"},
+      "match_key": "living_room"
+    },
+    {
+      "entity_id": "room_bathroom_new",
+      "entity_type": "Room",
+      "label": "New Bathroom",
+      "properties": {"area": 4.30, "floor": "ground"},
+      "match_key": "bathroom"
+    },
+    {
+      "entity_id": "building_main",
+      "entity_type": "Building",
+      "label": "Main Dwelling",
+      "properties": {"address": "7 Scotland Lane, Birmingham, B32 4BU"},
+      "match_key": "main_dwelling"
+    },
+    {
+      "entity_id": "boundary_site",
+      "entity_type": "Boundary",
+      "label": "Site Red Line Boundary",
+      "properties": {},
+      "match_key": "site_boundary"
+    }
+  ],
+  "relationships": [
+    {
+      "source_id": "Main Dwelling",
+      "target_id": "Kitchen",
+      "relationship_type": "CONTAINS",
+      "properties": {}
+    },
+    {
+      "source_id": "Main Dwelling",
+      "target_id": "Living/Dining Room",
+      "relationship_type": "CONTAINS",
+      "properties": {}
+    },
+    {
+      "source_id": "Main Dwelling",
+      "target_id": "Bedroom 1",
+      "relationship_type": "CONTAINS",
+      "properties": {}
+    },
+    {
+      "source_id": "Kitchen",
+      "target_id": "Utility Room",
+      "relationship_type": "ADJACENT_TO",
+      "properties": {}
+    },
+    {
+      "source_id": "Living/Dining Room",
+      "target_id": "Hall",
+      "relationship_type": "ADJACENT_TO",
+      "properties": {}
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "gt_conflict_1",
+      "conflict_type": "area",
+      "entity_a_id": "room_living_dining",
+      "entity_b_id": "room_living_proposed",
+      "field_name": "floor_area",
+      "value_a": "21.47",
+      "value_b": "17.0",
+      "severity": "high",
+      "description": "Living room area differs between existing plan (21.47 sqm) and proposed plan (17.0 sqm) — possible data entry error or redesign"
+    }
+  ],
+  "expected_verdicts": {
+    "floor_area_consistency": "fail",
+    "boundary_distance_1m": "pass"
+  },
+  "notes": "Ground truth for 202506444PA at 7 Scotland Lane. Based on existing GA plan and proposed ground floor plan."
+}

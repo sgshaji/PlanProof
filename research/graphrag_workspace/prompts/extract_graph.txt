@@ -1,0 +1,83 @@
+-Goal-
+Given a text document from a UK planning application and a list of entity types, identify all entities of those types from the text and all relationships among the identified entities.
+
+Planning documents describe proposed building works — extensions, new dwellings, conversions — and contain spatial information about rooms, buildings, boundaries, openings, measurements, constraints, and site features. Extract these as structured entities and relationships.
+
+-Steps-
+1. Identify all entities. For each identified entity, extract the following information:
+- entity_name: Name of the entity, capitalized
+- entity_type: One of the following types: [{entity_types}]
+- entity_description: Comprehensive description of the entity's attributes and activities
+Format each entity as ("entity"<|><entity_name><|><entity_type><|><entity_description>)
+
+Entity type guidance for planning documents:
+- Room: Any internal space — kitchen, bedroom, bathroom, lounge, hallway, utility, garage, loft, dormer, conservatory. Include dimensions if stated.
+- Building: A whole structure — dwelling, house, property, annexe, outbuilding, extension. Include height, footprint, storeys if stated.
+- Boundary: Site perimeter elements — fences, walls, hedges, party walls, retaining walls. Include heights and materials if stated.
+- Opening: Doors, windows, gates, rooflights, velux. Include dimensions and type if stated.
+- Measurement: Any stated dimension — area (sqm), height (m), width (m), length (m), distance (m), depth (m). Include the numeric value and unit.
+- Constraint: Planning rules, policies, or limits — maximum height, minimum boundary distance, permitted development rights, conservation area restrictions.
+- SiteFeature: External features — driveway, garden, parking, trees, landscaping, access road, drainage.
+
+2. From the entities identified in step 1, identify all pairs of (source_entity, target_entity) that are *clearly related* to each other.
+For each pair of related entities, extract the following information:
+- source_entity: name of the source entity, as identified in step 1
+- target_entity: name of the target entity, as identified in step 1
+- relationship_description: explanation as to why you think the source entity and the target entity are related to each other
+- relationship_strength: a numeric score indicating strength of the relationship between the source entity and target entity
+Format each relationship as ("relationship"<|><source_entity><|><target_entity><|><relationship_description><|><relationship_strength>)
+
+Common relationship types in planning documents:
+- CONTAINS: A building contains rooms, a site contains buildings
+- ADJACENT_TO: Rooms or features next to each other
+- HAS_MEASUREMENT: An entity has a specific dimension
+- BOUNDS: A boundary element bounds a site or property
+- OPENS_INTO: A door/window connects spaces
+- OVERLOOKS: A window overlooks a neighbouring property or feature
+- ACCESSES: A path or door provides access
+
+3. Return output in English as a single list of all the entities and relationships identified in steps 1 and 2. Use **##** as the list delimiter.
+
+4. When finished, output <|COMPLETE|>
+
+######################
+-Examples-
+######################
+Example 1:
+Entity_types: Room,Building,Boundary,Opening,Measurement,Constraint,SiteFeature
+Text:
+The proposed rear extension will have a depth of 4 metres and a width of 6 metres. The extension will have a flat roof with a maximum height of 3.2 metres. The kitchen measures 5.0m by 3.7m. A 1.8 metre high timber fence marks the northern boundary. The distance from the extension to the boundary is 2 metres.
+######################
+Output:
+("entity"<|>REAR EXTENSION<|>Building<|>A proposed single-storey rear extension with a flat roof, measuring 4 metres deep by 6 metres wide with a maximum height of 3.2 metres)
+##
+("entity"<|>KITCHEN<|>Room<|>Kitchen measuring 5.0 metres by 3.7 metres)
+##
+("entity"<|>NORTHERN BOUNDARY FENCE<|>Boundary<|>1.8 metre high timber fence on the northern boundary)
+##
+("entity"<|>EXTENSION DEPTH<|>Measurement<|>4 metres depth of the proposed rear extension)
+##
+("entity"<|>EXTENSION WIDTH<|>Measurement<|>6 metres width of the proposed rear extension)
+##
+("entity"<|>EXTENSION HEIGHT<|>Measurement<|>3.2 metres maximum height of the extension flat roof)
+##
+("entity"<|>BOUNDARY SETBACK<|>Measurement<|>2 metres distance from the extension to the northern boundary)
+##
+("relationship"<|>REAR EXTENSION<|>KITCHEN<|>The rear extension contains the kitchen<|>9)
+##
+("relationship"<|>REAR EXTENSION<|>EXTENSION DEPTH<|>The extension has a depth measurement of 4 metres<|>8)
+##
+("relationship"<|>REAR EXTENSION<|>EXTENSION HEIGHT<|>The extension has a maximum height of 3.2 metres<|>8)
+##
+("relationship"<|>REAR EXTENSION<|>NORTHERN BOUNDARY FENCE<|>The extension is 2 metres from the northern boundary fence<|>7)
+##
+("relationship"<|>NORTHERN BOUNDARY FENCE<|>BOUNDARY SETBACK<|>The setback of 2 metres is measured from the northern boundary fence<|>8)
+<|COMPLETE|>
+
+######################
+-Real Data-
+######################
+Entity_types: {entity_types}
+Text: {input_text}
+######################
+Output:

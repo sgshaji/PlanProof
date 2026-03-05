@@ -54,6 +54,7 @@ def describe_image(
     image_bytes: bytes,
     deployment: str,
     api_version: str,
+    cost_tracker=None,
 ) -> str:
     """Send an image to GPT-4o Vision and get a spatial description."""
     b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -76,6 +77,10 @@ def describe_image(
         ],
         max_tokens=4096,
     )
+    # Track cost
+    if cost_tracker:
+        cost_tracker.record_from_response(response, deployment, "vision_extraction")
+        cost_tracker.check_budget()
     return response.choices[0].message.content
 
 
@@ -86,6 +91,7 @@ def extract_application(
     raw_output_dir: Path,
     deployment: str,
     api_version: str,
+    cost_tracker=None,
 ) -> int:
     """Extract all PDFs in an application directory. Returns count of pages processed."""
     app_id = app_dir.name
@@ -120,7 +126,8 @@ def extract_application(
             try:
                 png_bytes = pdf_page_to_png_bytes(pdf_path, page_num)
                 description = describe_image(
-                    client, png_bytes, deployment, api_version
+                    client, png_bytes, deployment, api_version,
+                    cost_tracker=cost_tracker,
                 )
 
                 # Save text for GraphRAG
@@ -149,11 +156,18 @@ def extract_application(
                     "    Page %d: FAILED", page_num + 1
                 )
 
+    if cost_tracker:
+        logger.info("  [%s] Cost so far: $%.4f", app_id, cost_tracker.total_cost)
+
     return pages_processed
 
 
 def main():
     import os
+
+    # Load .env from project root
+    from research.config import ResearchConfig
+    cfg = ResearchConfig()
 
     parser = argparse.ArgumentParser(
         description="Extract spatial descriptions from floor plan PDFs using GPT-4o Vision."
@@ -161,8 +175,8 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=Path,
-        required=True,
-        help="Directory containing application subdirectories with PDFs",
+        default=Path(cfg.bcc_data_path),
+        help="Directory containing application subdirectories with PDFs (default: BCC sample data)",
     )
     parser.add_argument(
         "--output-dir",
@@ -218,6 +232,11 @@ def main():
         api_version=api_version,
     )
 
+    # Cost tracking
+    from research.cost_tracker import CostTracker
+    tracker = CostTracker(budget_usd=cfg.budget_usd)
+    logger.info("Budget limit: $%.2f (set RESEARCH_BUDGET_USD to change)", tracker.budget_usd)
+
     # Find application directories
     app_dirs = sorted(
         d for d in args.input_dir.iterdir()
@@ -234,9 +253,11 @@ def main():
         pages = extract_application(
             client, app_dir, args.output_dir, args.raw_output_dir,
             deployment, api_version,
+            cost_tracker=tracker,
         )
         total_pages += pages
 
+    tracker.print_summary()
     logger.info("Done: %d pages extracted from %d applications", total_pages, len(app_dirs))
 
 

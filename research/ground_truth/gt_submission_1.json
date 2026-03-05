@@ -1,0 +1,101 @@
+{
+  "submission_id": 1,
+  "annotator": "sample",
+  "annotation_date": "2026-03-04",
+  "is_synthetic": true,
+  "source": "manual",
+  "entities": [
+    {
+      "entity_id": "room_kitchen",
+      "entity_type": "Room",
+      "label": "Kitchen",
+      "properties": {"area": 15.0, "floor": "ground"},
+      "match_key": "kitchen"
+    },
+    {
+      "entity_id": "room_lounge",
+      "entity_type": "Room",
+      "label": "Lounge",
+      "properties": {"area": 22.5, "floor": "ground"},
+      "match_key": "lounge"
+    },
+    {
+      "entity_id": "room_bedroom",
+      "entity_type": "Room",
+      "label": "Bedroom 1",
+      "properties": {"area": 18.0, "floor": "first"},
+      "match_key": "bedroom_1"
+    },
+    {
+      "entity_id": "building_main",
+      "entity_type": "Building",
+      "label": "Main Dwelling",
+      "properties": {"ridge_height": 8.5, "address": "12 Oak Lane"},
+      "match_key": "main_dwelling"
+    },
+    {
+      "entity_id": "boundary_north",
+      "entity_type": "Boundary",
+      "label": "North Boundary",
+      "properties": {"distance_to_building": 2.0},
+      "match_key": "north_boundary"
+    }
+  ],
+  "relationships": [
+    {
+      "source_id": "Main Dwelling",
+      "target_id": "Kitchen",
+      "relationship_type": "CONTAINS",
+      "properties": {}
+    },
+    {
+      "source_id": "Main Dwelling",
+      "target_id": "Lounge",
+      "relationship_type": "CONTAINS",
+      "properties": {}
+    },
+    {
+      "source_id": "Kitchen",
+      "target_id": "Lounge",
+      "relationship_type": "ADJACENT_TO",
+      "properties": {}
+    },
+    {
+      "source_id": "North Boundary",
+      "target_id": "Main Dwelling",
+      "relationship_type": "OPENS_INTO",
+      "properties": {}
+    }
+  ],
+  "conflicts": [
+    {
+      "conflict_id": "gt_conflict_1",
+      "conflict_type": "area",
+      "entity_a_id": "room_kitchen",
+      "entity_b_id": "room_kitchen",
+      "field_name": "floor_area",
+      "value_a": "15.0",
+      "value_b": "18.5",
+      "severity": "high",
+      "description": "Kitchen area differs between form (15 sqm) and drawing (18.5 sqm)"
+    },
+    {
+      "conflict_id": "gt_conflict_2",
+      "conflict_type": "height",
+      "entity_a_id": "building_main",
+      "entity_b_id": "building_main",
+      "field_name": "ridge_height",
+      "value_a": "8.5",
+      "value_b": "9.2",
+      "severity": "medium",
+      "description": "Ridge height differs between form (8.5m) and drawing (9.2m)"
+    }
+  ],
+  "expected_verdicts": {
+    "max_height_8m": "fail",
+    "boundary_distance_1m": "pass",
+    "floor_area_consistency": "fail",
+    "address_consistency": "pass"
+  },
+  "notes": "Sample ground truth annotation for testing and demonstration purposes."
+}

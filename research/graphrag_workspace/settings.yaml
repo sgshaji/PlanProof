@@ -1,72 +1,104 @@
 # GraphRAG Settings for PlanProof Planning Document Analysis
 # Reference: https://microsoft.github.io/graphrag/config/yaml/
+# Compatible with GraphRAG 3.0.5
 
-# LLM configuration — uses Azure OpenAI via environment variables
-llm:
-  type: azure_openai_chat
-  api_key: ${AZURE_OPENAI_API_KEY}
-  api_base: ${AZURE_OPENAI_ENDPOINT}
-  api_version: ${AZURE_OPENAI_API_VERSION}
-  deployment_name: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
-  model: gpt-4o
-  max_retries: 3
-  tokens_per_minute: 80000
-  requests_per_minute: 48
+### LLM settings — Azure OpenAI ###
+completion_models:
+  default_completion_model:
+    model_provider: azure
+    model: gpt-4o
+    auth_method: api_key
+    api_key: ${GRAPHRAG_API_KEY}
+    api_base: ${GRAPHRAG_API_BASE}
+    api_version: ${GRAPHRAG_API_VERSION}
+    azure_deployment_name: ${GRAPHRAG_CHAT_DEPLOYMENT}
+    retry:
+      type: exponential_backoff
+    rate_limit:
+      type: sliding_window
+      period_in_seconds: 60
+      requests_per_period: 30
+      tokens_per_period: 40000
 
-# Embedding configuration
-embeddings:
-  llm:
-    type: azure_openai_embedding
-    api_key: ${AZURE_OPENAI_API_KEY}
-    api_base: ${AZURE_OPENAI_ENDPOINT}
-    api_version: ${AZURE_OPENAI_API_VERSION}
-    deployment_name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+embedding_models:
+  default_embedding_model:
+    model_provider: azure
     model: text-embedding-3-small
+    auth_method: api_key
+    api_key: ${GRAPHRAG_API_KEY}
+    api_base: ${GRAPHRAG_API_BASE}
+    api_version: ${GRAPHRAG_API_VERSION}
+    azure_deployment_name: ${GRAPHRAG_EMBEDDING_DEPLOYMENT}
+    retry:
+      type: exponential_backoff
 
-# Input: plain text files extracted from planning PDFs
+### Document processing settings ###
 input:
-  type: file
-  file_type: text
-  base_dir: input
+  type: text
 
-# Chunking: ~300 tokens per chunk for fine-grained entity extraction
-chunks:
+# Fine-grained chunking for planning document entity extraction
+chunking:
+  type: tokens
   size: 300
   overlap: 100
+  encoding_model: o200k_base
 
-# Entity extraction: use our custom planning-domain prompt
-entity_extraction:
-  prompt: prompts/entity_extraction.txt
+### Storage settings ###
+input_storage:
+  type: file
+  base_dir: "input"
+
+output_storage:
+  type: file
+  base_dir: "output"
+
+reporting:
+  type: file
+  base_dir: "logs"
+
+cache:
+  type: json
+  storage:
+    type: file
+    base_dir: "cache"
+
+vector_store:
+  type: lancedb
+  db_uri: output/lancedb
+
+### Workflow settings ###
+embed_text:
+  embedding_model_id: default_embedding_model
+
+# Entity extraction with planning-domain entity types
+extract_graph:
+  completion_model_id: default_completion_model
+  prompt: "prompts/extract_graph.txt"
+  entity_types: [Room, Building, Boundary, Opening, Measurement, Constraint, SiteFeature]
   max_gleanings: 1
-  entity_types:
-    - Room
-    - Building
-    - Boundary
-    - Opening
-    - Measurement
-    - Constraint
-    - SiteFeature
 
-# Community detection via Leiden algorithm
+summarize_descriptions:
+  completion_model_id: default_completion_model
+  prompt: "prompts/summarize_descriptions.txt"
+  max_length: 500
+
+extract_graph_nlp:
+  text_analyzer:
+    extractor_type: regex_english
+
 cluster_graph:
   max_cluster_size: 10
 
-# Community report summarisation
-summarize_descriptions:
-  prompt: prompts/summarize_descriptions.txt
-  max_length: 500
+extract_claims:
+  enabled: false
 
-# Output: Parquet files for downstream SN-KG construction
-storage:
-  type: file
-  base_dir: output
+community_reports:
+  completion_model_id: default_completion_model
+  graph_prompt: "prompts/community_report_graph.txt"
+  text_prompt: "prompts/community_report_text.txt"
+  max_length: 2000
+  max_input_length: 8000
 
-# Reporting
-reporting:
-  type: file
-  base_dir: output/reports
-
-# Cache
-cache:
-  type: file
-  base_dir: cache
+snapshots:
+  graphml: false
+  embeddings: false
