@@ -352,8 +352,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/AathiraTD/PlanProof/issues)
-- **Documentation**: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-
----
-
-Made with ❤️ for UK planning officers | Powered by Azure AI
+- **Documentation**: 
