@@ -10,9 +10,22 @@
 
 PlanProof is an intelligent validation system for UK planning applications that combines Azure AI services with a comprehensive rules engine to automate initial validation, extract key information, and provide clear actionable findings for planning officers.
 
+## Delivery problem and scope
+
+Planning-application review involves incomplete submissions, inconsistent information,
+and findings that must be traced back to documents. PlanProof combines deterministic
+validation, document analysis, an officer-facing interface, and human review rather
+than treating the task as an unconstrained chatbot.
+
+This is a **collaborative project**; see the [contribution history](https://github.com/sgshaji/PlanProof/graphs/contributors)
+for attribution. The repository documents implementation and deployment paths, but
+does not establish adoption by a planning authority or a measured reduction in review
+time. Deployment availability and end-to-end behaviour were not reverified for this
+documentation update.
+
 ## 🌐 Live Demo
 
-**Production Environment (Azure Container Apps)**
+**Documented deployment endpoints (Azure Container Apps; current availability unverified)**
 - **Application**: [https://planproof-frontend.jollydune-ff843d95.uksouth.azurecontainerapps.io/](https://planproof-frontend.jollydune-ff843d95.uksouth.azurecontainerapps.io/)
 - **API**: [https://planproof-backend.jollydune-ff843d95.uksouth.azurecontainerapps.io/](https://planproof-backend.jollydune-ff843d95.uksouth.azurecontainerapps.io/)
 - **API Documentation**: [https://planproof-backend.jollydune-ff843d95.uksouth.azurecontainerapps.io/api/docs](https://planproof-backend.jollydune-ff843d95.uksouth.azurecontainerapps.io/api/docs)
@@ -75,7 +88,7 @@ PlanProof is an intelligent validation system for UK planning applications that 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/AathiraTD/PlanProof.git
+   git clone https://github.com/sgshaji/PlanProof.git
    cd PlanProof
    ```
 
